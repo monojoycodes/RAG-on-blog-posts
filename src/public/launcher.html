@@ -1,0 +1,200 @@
+<!--
+  ╔══════════════════════════════════════════════════════╗
+  ║   English With A Difference — Floating Chat Launcher ║
+  ║   Paste this entire block into:                      ║
+  ║   Wix → Settings → Custom Code → Body (all pages)   ║
+  ║                                                      ║
+  ║   IMPORTANT: Replace YOUR_RENDER_URL below with      ║
+  ║   your actual Render deployment URL before pasting.  ║
+  ╚══════════════════════════════════════════════════════╝
+-->
+
+<style>
+  /* === FLOATING BUTTON === */
+  #ewd-chat-btn {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #7B1C1C, #5a1414);
+    box-shadow: 0 4px 20px rgba(123,28,28,0.45);
+    cursor: pointer;
+    z-index: 99998;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    outline: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    animation: ewd-pulse 3s ease-in-out infinite;
+  }
+
+  #ewd-chat-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 6px 28px rgba(123,28,28,0.55);
+  }
+
+  #ewd-chat-btn svg { pointer-events: none; }
+
+  /* Notification dot (shows before first open) */
+  #ewd-notif-dot {
+    position: fixed;
+    bottom: 73px;
+    right: 21px;
+    width: 14px;
+    height: 14px;
+    background: #c8962c;
+    border-radius: 50%;
+    border: 2px solid white;
+    z-index: 99999;
+    animation: ewd-blink 2s ease-in-out infinite;
+  }
+
+  /* === CHAT PANEL === */
+  #ewd-chat-panel {
+    position: fixed;
+    bottom: 98px;
+    right: 24px;
+    width: 380px;
+    height: 580px;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.22);
+    z-index: 99997;
+    transform: scale(0.85) translateY(30px);
+    transform-origin: bottom right;
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), opacity 0.22s ease;
+    border: 1px solid rgba(123,28,28,0.15);
+  }
+
+  #ewd-chat-panel.open {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  #ewd-chat-panel iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+  }
+
+  /* === MOBILE: full-screen panel === */
+  @media (max-width: 480px) {
+    #ewd-chat-panel {
+      bottom: 0;
+      right: 0;
+      width: 100%;
+      height: 90dvh;
+      border-radius: 20px 20px 0 0;
+      transform: translateY(100%);
+    }
+    #ewd-chat-panel.open {
+      transform: translateY(0);
+    }
+    #ewd-chat-btn {
+      bottom: 16px;
+      right: 16px;
+    }
+    #ewd-notif-dot {
+      bottom: 65px;
+      right: 13px;
+    }
+  }
+
+  /* === ANIMATIONS === */
+  @keyframes ewd-pulse {
+    0%, 100% { box-shadow: 0 4px 20px rgba(123,28,28,0.45); }
+    50% { box-shadow: 0 4px 30px rgba(123,28,28,0.7), 0 0 0 8px rgba(123,28,28,0.08); }
+  }
+
+  @keyframes ewd-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+</style>
+
+<!-- Notification dot (hidden after first open) -->
+<div id="ewd-notif-dot"></div>
+
+<!-- Floating Button -->
+<button id="ewd-chat-btn" aria-label="Open AI English Tutor">
+  <!-- Open icon: sparkle star -->
+  <svg id="ewd-icon-open" width="28" height="28" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M18 4 L19.8 14.2 L30 16 L19.8 17.8 L18 28 L16.2 17.8 L6 16 L16.2 14.2 Z" fill="#c8962c"/>
+    <path d="M27 6 L27.8 9.2 L31 10 L27.8 10.8 L27 14 L26.2 10.8 L23 10 L26.2 9.2 Z" fill="rgba(200,150,44,0.75)"/>
+    <path d="M8 22 L8.6 24.4 L11 25 L8.6 25.6 L8 28 L7.4 25.6 L5 25 L7.4 24.4 Z" fill="rgba(200,150,44,0.5)"/>
+  </svg>
+  <!-- Close icon (shown when panel is open) -->
+  <svg id="ewd-icon-close" width="22" height="22" viewBox="0 0 24 24" fill="none"
+       stroke="white" stroke-width="2.5" stroke-linecap="round"
+       style="display:none;">
+    <line x1="18" y1="6" x2="6" y2="18"/>
+    <line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+</button>
+
+<!-- Chat Panel (iframe) -->
+<div id="ewd-chat-panel">
+  <!-- iframe is injected by JS on first open to avoid cold-start loading on every page -->
+</div>
+
+<script>
+  (function() {
+    // ⬇ REPLACE THIS with your actual Render deployment URL
+    var WIDGET_URL = 'https://rag-on-blog-posts.onrender.com/widget.html';
+
+    var btn         = document.getElementById('ewd-chat-btn');
+    var panel       = document.getElementById('ewd-chat-panel');
+    var iconOpen    = document.getElementById('ewd-icon-open');
+    var iconClose   = document.getElementById('ewd-icon-close');
+    var notifDot    = document.getElementById('ewd-notif-dot');
+    var isOpen      = false;
+    var iframeLoaded = false;
+
+    function openPanel() {
+      // Lazy-load the iframe only on first open
+      if (!iframeLoaded) {
+        var iframe = document.createElement('iframe');
+        iframe.src = WIDGET_URL;
+        iframe.allow = 'clipboard-write';
+        iframe.title = 'English AI Tutor';
+        panel.appendChild(iframe);
+        iframeLoaded = true;
+      }
+      panel.classList.add('open');
+      iconOpen.style.display = 'none';
+      iconClose.style.display = 'block';
+      notifDot.style.display = 'none';
+      isOpen = true;
+    }
+
+    function closePanel() {
+      panel.classList.remove('open');
+      iconOpen.style.display = 'block';
+      iconClose.style.display = 'none';
+      isOpen = false;
+    }
+
+    btn.addEventListener('click', function() {
+      isOpen ? closePanel() : openPanel();
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && isOpen) closePanel();
+    });
+
+    // Close when clicking outside the panel (desktop)
+    document.addEventListener('click', function(e) {
+      if (isOpen && !panel.contains(e.target) && e.target !== btn) {
+        closePanel();
+      }
+    });
+  })();
+</script>
