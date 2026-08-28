@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Tutor — Admin Dashboard</title>
+  <title>AI Tutor — Admin Intelligence Portal</title>
   <style>
     :root {
       --maroon: #7B1C1C;
@@ -17,13 +17,36 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Georgia, serif; background: var(--cream); color: #1a1a1a; min-height: 100vh; }
 
-    /* Header */
+    /* === LOGIN MODAL === */
+    #login-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center; z-index: 10000; padding: 20px;
+    }
+    .login-card {
+      background: white; border: 1px solid var(--border); border-radius: 16px;
+      padding: 32px 28px; width: 100%; max-width: 400px; text-align: center;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+    }
+    .login-card h2 { color: var(--maroon); font-size: 20px; margin-bottom: 6px; }
+    .login-card p { font-size: 13px; color: #666; margin-bottom: 20px; font-style: italic; }
+    .login-input {
+      width: 100%; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 15px; outline: none; margin-bottom: 16px; font-family: Arial, sans-serif;
+      text-align: center; letter-spacing: 0.1em;
+    }
+    .login-input:focus { border-color: var(--maroon); }
+    .login-btn {
+      width: 100%; padding: 12px; border-radius: 8px; background: var(--maroon);
+      color: white; border: none; font-size: 15px; font-weight: 700; cursor: pointer;
+      transition: background 0.2s; font-family: Georgia, serif;
+    }
+    .login-btn:hover { background: var(--maroon-dark); }
+    .login-err { color: var(--red); font-size: 12px; margin-top: 12px; min-height: 18px; }
+
+    /* === HEADER === */
     header {
       background: linear-gradient(135deg, var(--maroon), var(--maroon-dark));
-      padding: 20px 32px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      padding: 20px 32px; display: flex; align-items: center; justify-content: space-between;
     }
     header h1 { color: white; font-size: 20px; }
     header h1 span { color: var(--gold); }
@@ -40,8 +63,8 @@
     .btn.ai-btn { background: #ffffff; color: var(--maroon); border-color: #ffffff; font-weight: 700; }
     .btn.ai-btn:hover { background: var(--cream); }
 
-    /* Layout */
-    main { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
+    /* === LAYOUT === */
+    main { max-width: 1200px; margin: 0 auto; padding: 28px 24px; display: none; }
 
     /* Stat cards */
     .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
@@ -61,14 +84,8 @@
 
     /* AI Analysis box */
     .ai-box {
-      background: #fcf9f5;
-      border: 1px solid #e8d7c3;
-      border-left: 4px solid var(--gold);
-      border-radius: 8px;
-      padding: 20px;
-      line-height: 1.7;
-      font-size: 14px;
-      color: #2c2c2c;
+      background: #fcf9f5; border: 1px solid #e8d7c3; border-left: 4px solid var(--gold);
+      border-radius: 8px; padding: 20px; line-height: 1.7; font-size: 14px; color: #2c2c2c;
     }
     .ai-box h3 { color: var(--maroon); font-size: 16px; margin-top: 18px; margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
     .ai-box h3:first-child { margin-top: 0; }
@@ -76,7 +93,7 @@
     .ai-box li { margin-bottom: 6px; }
     .ai-box strong { color: #111; }
 
-    /* Top questions table */
+    /* Tables */
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; padding: 6px 10px; border-bottom: 1px solid var(--border); }
     td { padding: 10px 10px; border-bottom: 1px solid #f3e9da; vertical-align: top; }
@@ -93,7 +110,6 @@
     .query-meta a { color: var(--maroon); text-decoration: none; }
     .fallback-tag { color: var(--red); font-weight: 700; }
 
-    /* Loading / error */
     .status-msg { text-align: center; padding: 40px; color: #999; font-style: italic; }
     .toast { position: fixed; bottom: 24px; right: 24px; background: #1a1a1a; color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px; display: none; z-index: 9999; }
 
@@ -105,19 +121,31 @@
 </head>
 <body>
 
-<header>
+<!-- LOGIN OVERLAY MODAL -->
+<div id="login-overlay">
+  <div class="login-card">
+    <h2>✦ Admin Portal Login</h2>
+    <p>englishwithadifference.com</p>
+    <input type="password" id="passcode-input" class="login-input" placeholder="Enter Admin Passcode" autocomplete="current-password" autofocus />
+    <button class="login-btn" onclick="submitLogin()">Unlock Dashboard</button>
+    <div id="login-err" class="login-err"></div>
+  </div>
+</div>
+
+<header id="main-header" style="display:none;">
   <div>
-    <h1>✦ <span>English AI Tutor</span> — Admin Dashboard</h1>
-    <p>englishwithadifference.com · Analytics &amp; Intelligence Center</p>
+    <h1>✦ <span>English AI Tutor</span> — Admin Portal</h1>
+    <p>englishwithadifference.com · Secure Analytics &amp; Intelligence Center</p>
   </div>
   <div class="header-actions">
     <button class="btn ai-btn" onclick="loadAiAnalysis()">🤖 AI Site Insights</button>
     <button class="btn" onclick="loadDashboard()">↻ Refresh</button>
     <button class="btn primary" onclick="triggerDigest()">✉ Send Digest Now</button>
+    <button class="btn" style="border-color:rgba(255,255,255,0.25);" onclick="logout()">🔒 Logout</button>
   </div>
 </header>
 
-<main>
+<main id="main-content">
   <!-- Stats -->
   <div class="stats-grid" id="stats-grid">
     <div class="stat-card"><div class="value" id="stat-today">—</div><div class="label">Queries Today</div></div>
@@ -167,7 +195,24 @@
 
 <script>
   const API = window.location.origin;
-  const ADMIN_KEY = new URLSearchParams(window.location.search).get('key') || '';
+
+  function getToken() {
+    // Check sessionStorage first, or fallback to URL query param if present
+    const urlKey = new URLSearchParams(window.location.search).get('key');
+    if (urlKey) {
+      sessionStorage.setItem('adminToken', urlKey);
+      // Clean query string from browser URL bar without reloading
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    return sessionStorage.getItem('adminToken') || '';
+  }
+
+  function getAuthHeaders() {
+    return {
+      'Authorization': `Bearer ${getToken()}`,
+      'Content-Type': 'application/json'
+    };
+  }
 
   function showToast(msg, duration = 3500) {
     const t = document.getElementById('toast');
@@ -187,28 +232,64 @@
       .replace(/\n\n/g, '<br><br>');
   }
 
-  async function loadAiAnalysis() {
-    const container = document.getElementById('ai-analysis-container');
-    container.innerHTML = '<div class="status-msg">⏳ Analyzing student questions with Gemini… Please wait 10-15 seconds.</div>';
+  async function submitLogin() {
+    const passcode = document.getElementById('passcode-input').value.trim();
+    const errDiv = document.getElementById('login-err');
+    errDiv.textContent = '';
+
+    if (!passcode) {
+      errDiv.textContent = 'Please enter your passcode.';
+      return;
+    }
+
     try {
-      const res = await fetch(`${API}/admin/analysis?key=${ADMIN_KEY}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await fetch(`${API}/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode })
+      });
       const data = await res.json();
-      container.innerHTML = renderMarkdown(data.analysis);
-      showToast('✨ AI Site Analysis complete!');
+
+      if (res.ok && data.success) {
+        sessionStorage.setItem('adminToken', data.token);
+        document.getElementById('login-overlay').style.display = 'none';
+        document.getElementById('main-header').style.display = 'flex';
+        document.getElementById('main-content').style.display = 'block';
+        loadDashboard();
+      } else {
+        errDiv.textContent = data.error || 'Invalid admin passcode.';
+      }
     } catch (err) {
-      container.innerHTML = `<div class="status-msg" style="color:var(--red)">Failed to generate analysis: ${err.message}</div>`;
+      errDiv.textContent = 'Connection error: ' + err.message;
     }
   }
 
+  function logout() {
+    sessionStorage.removeItem('adminToken');
+    window.location.reload();
+  }
+
   async function loadDashboard() {
+    const token = getToken();
+    if (!token) {
+      document.getElementById('login-overlay').style.display = 'flex';
+      return;
+    }
+
     try {
-      const res = await fetch(`${API}/admin/data?key=${ADMIN_KEY}`);
-      if (res.status === 403) {
-        document.querySelector('main').innerHTML = '<div class="status-msg" style="padding:80px;font-size:18px;">⛔ Invalid admin key. Add ?key=YOUR_ADMIN_KEY to the URL.</div>';
+      const res = await fetch(`${API}/admin/data`, { headers: getAuthHeaders() });
+      if (res.status === 403 || res.status === 401) {
+        sessionStorage.removeItem('adminToken');
+        document.getElementById('login-overlay').style.display = 'flex';
+        document.getElementById('login-err').textContent = 'Session expired or invalid passcode.';
         return;
       }
       const data = await res.json();
+
+      // Show dashboard
+      document.getElementById('login-overlay').style.display = 'none';
+      document.getElementById('main-header').style.display = 'flex';
+      document.getElementById('main-content').style.display = 'block';
 
       // Stats
       document.getElementById('stat-today').textContent = data.stats.totalToday;
@@ -253,13 +334,26 @@
     }
   }
 
+  async function loadAiAnalysis() {
+    const container = document.getElementById('ai-analysis-container');
+    container.innerHTML = '<div class="status-msg">⏳ Analyzing student questions with Gemini… Please wait 10-15 seconds.</div>';
+    try {
+      const res = await fetch(`${API}/admin/analysis`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      container.innerHTML = renderMarkdown(data.analysis);
+      showToast('✨ AI Site Analysis complete!');
+    } catch (err) {
+      container.innerHTML = `<div class="status-msg" style="color:var(--red)">Failed to generate analysis: ${err.message}</div>`;
+    }
+  }
+
   async function triggerDigest() {
     showToast('Sending digest email… this may take 30 seconds.');
     try {
       const res = await fetch(`${API}/digest`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: ADMIN_KEY })
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       if (data.success) {
@@ -280,10 +374,13 @@
       .replace(/"/g, '&quot;');
   }
 
-  // Auto-load dashboard stats on page open
+  // Allow pressing Enter in passcode input
+  document.getElementById('passcode-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitLogin();
+  });
+
+  // Auto-init on page load
   loadDashboard();
-  // Auto-refresh stats every 60 seconds
-  setInterval(loadDashboard, 60000);
 </script>
 </body>
 </html>

@@ -279,17 +279,62 @@ Direct Answer:`;
   }
 });
 
-// ── Admin dashboard ───────────────────────────────────────────────────────────
-app.get('/admin', (req, res) => {
-  if (req.query.key !== ADMIN_KEY) {
-    return res.status(403).send('Forbidden: Invalid admin key. Add ?key=YOUR_ADMIN_KEY to the URL.');
+// ── Admin Security & Authentication ──────────────────────────────────────────
+const loginAttempts = new Map(); // ip -> { count, lockUntil }
+
+function isIpLocked(ip) {
+  const record = loginAttempts.get(ip);
+  if (!record) return false;
+  if (Date.now() < record.lockUntil) return true;
+  loginAttempts.delete(ip); // lock expired
+  return false;
+}
+
+function recordFailedLogin(ip) {
+  const record = loginAttempts.get(ip) || { count: 0, lockUntil: 0 };
+  record.count += 1;
+  if (record.count >= 5) {
+    record.lockUntil = Date.now() + 15 * 60 * 1000; // 15-minute lockout
+    console.warn(`[Security] IP ${ip} locked out for 15 minutes due to 5 failed login attempts.`);
   }
+  loginAttempts.set(ip, record);
+}
+
+function authenticateAdmin(req) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  const key = token || req.query.key || req.body?.key;
+  return key === ADMIN_KEY;
+}
+
+// ── Admin Dashboard Login & Web Page ─────────────────────────────────────────
+app.get('/admin', (req, res) => {
+  // Serve the admin dashboard HTML — authentication is handled client-side via login modal
   res.sendFile(path.join(process.cwd(), 'src', 'public', 'admin.html'));
+});
+
+// Admin Passcode Login API
+app.post('/admin/login', (req, res) => {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+
+  if (isIpLocked(ip)) {
+    return res.status(429).json({ error: 'Too many failed login attempts. IP locked for 15 minutes.' });
+  }
+
+  const { passcode } = req.body;
+  if (passcode === ADMIN_KEY) {
+    loginAttempts.delete(ip); // reset attempts on success
+    return res.json({ success: true, token: ADMIN_KEY });
+  } else {
+    recordFailedLogin(ip);
+    const remaining = 5 - (loginAttempts.get(ip)?.count || 0);
+    return res.status(401).json({ error: `Invalid admin passcode. ${remaining} attempt(s) remaining.` });
+  }
 });
 
 // Admin data API (used by admin.html)
 app.get('/admin/data', async (req, res) => {
-  if (req.query.key !== ADMIN_KEY) return res.status(403).json({ error: 'Forbidden' });
+  if (!authenticateAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
   try {
     const [logs, stats] = await Promise.all([
       getRecentLogs(7, 20),
@@ -303,12 +348,13 @@ app.get('/admin/data', async (req, res) => {
 
 // Admin AI Insights & Site Improvement Recommendations API
 app.get('/admin/analysis', async (req, res) => {
-  if (req.query.key !== ADMIN_KEY) return res.status(403).json({ error: 'Forbidden' });
+  if (!authenticateAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
   try {
     const [logs, stats] = await Promise.all([
       getRecentLogs(7, 100),
       getStats()
     ]);
+
 
     if (logs.length === 0) {
       return res.json({
@@ -360,7 +406,7 @@ Use clear formatting, bold key terms, and bullet points. Make it insightful and 
 
 // ── Email digest ──────────────────────────────────────────────────────────────
 app.post('/digest', async (req, res) => {
-  if (req.body.key !== ADMIN_KEY) return res.status(403).json({ error: 'Forbidden' });
+  if (!authenticateAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
   try {
     const result = await runDigest();
     res.json(result);
@@ -372,7 +418,7 @@ app.post('/digest', async (req, res) => {
 
 // ── Incremental sync ──────────────────────────────────────────────────────────
 app.post('/sync', async (req, res) => {
-  if (req.body.key !== ADMIN_KEY) return res.status(403).json({ error: 'Forbidden' });
+  if (!authenticateAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
 
   // Respond immediately — sync runs in background (can take several minutes)
   res.json({ status: 'sync_started', message: 'Incremental sync started in background. Check server logs for progress.' });
@@ -381,6 +427,7 @@ app.post('/sync', async (req, res) => {
     .then(result => console.log('[Sync] Complete:', result))
     .catch(err => console.error('[Sync] Failed:', err.message));
 });
+
 
 // ── Legacy reindex ────────────────────────────────────────────────────────────
 app.post('/index', (req, res) => {
