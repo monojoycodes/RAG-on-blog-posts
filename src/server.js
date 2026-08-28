@@ -37,32 +37,43 @@ app.get('/', (req, res) => {
 // ── Groq API call helper (Primary Ultra-Fast Engine) ────────────────────────
 async function generateWithGroq(prompt) {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY is not set');
+  if (!apiKey) throw new Error('GROQ_API_KEY is not set in environment variables');
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'groq/compound-mini', // Ultra-fast LPU engine routing to Llama 3.3 70B internally
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.2
-    })
-  });
+  // Try primary model (groq/compound-mini), fallback to qwen/qwen3.6-27b if needed
+  const models = ['groq/compound-mini', 'qwen/qwen3.6-27b'];
 
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`Groq API error HTTP ${res.status}: ${errorText}`);
+  for (const model of models) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2
+        })
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.warn(`[Groq] Model ${model} returned HTTP ${res.status}: ${errorText}`);
+        continue; // Try next model
+      }
+
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (content) {
+        return content.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '').trim();
+      }
+    } catch (err) {
+      console.warn(`[Groq] Exception with model ${model}:`, err.message);
+    }
   }
 
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error('Groq returned empty response body');
-
-  // Strip internal reasoning tags if present
-  return content.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '').trim();
+  throw new Error('All Groq models failed or rate-limited.');
 }
 
 // ── Gemini call helper (Backup Engine) ────────────────────────────────────────
@@ -96,19 +107,20 @@ async function generateWithGemini(prompt, maxRetries = 2) {
 // ── Hybrid LLM Engine: Groq Primary ⚡ → Gemini Backup 🛡 ─────────────────────
 async function generateWithRetry(prompt) {
   try {
-    // 1. Try Groq (Ultra-fast ~1s turnaround)
+    // 1. Try Groq (Ultra-fast ~1s turnaround, 14,400 RPD)
     return await generateWithGroq(prompt);
   } catch (groqErr) {
-    console.warn(`[LLM Engine] Groq error (${groqErr.message}). Falling back to Gemini 3.6 Flash...`);
+    console.warn(`[LLM Engine] Groq unavailable (${groqErr.message}). Falling back to Gemini...`);
     try {
-      // 2. Fallback to Gemini 3.6 Flash
+      // 2. Fallback to Gemini
       return await generateWithGemini(prompt);
     } catch (geminiErr) {
-      console.error('[LLM Engine] Both Groq and Gemini failed:', geminiErr.message);
-      throw geminiErr;
+      console.error('[LLM Engine] All LLM providers failed:', geminiErr.message);
+      throw new Error('Our AI servers are experiencing high traffic right now. Please try again in a few moments.');
     }
   }
 }
+
 
 
 // ── Semantic search ───────────────────────────────────────────────────────────

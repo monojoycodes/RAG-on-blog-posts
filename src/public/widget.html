@@ -623,7 +623,11 @@
       if (res.ok) {
         appendMessage('bot', data.answer, data.sources);
       } else {
-        appendMessage('bot', `Sorry, something went wrong: ${data.error || 'Unknown error'}`);
+        const isQuotaErr = data.error && (data.error.includes('429') || data.error.includes('quota') || data.error.includes('GoogleGenerativeAI'));
+        const friendlyMsg = isQuotaErr
+          ? 'Our AI servers are experiencing high traffic right now. Please try asking your question again in a minute.'
+          : `Sorry, something went wrong: ${data.error || 'Please try again.'}`;
+        appendMessage('bot', friendlyMsg);
       }
     } catch (err) {
       removeTyping();
