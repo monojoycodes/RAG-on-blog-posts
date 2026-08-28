@@ -9,3 +9,5 @@ yarn-debug.log*
 yarn-error.log*
 .idea/
 .vscode/
+ADMIN_GUIDE_LOCAL.html
+ADMIN_GUIDE.html
