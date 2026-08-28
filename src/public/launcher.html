@@ -157,6 +157,16 @@
     var isOpen      = false;
     var iframeLoaded = false;
 
+    function sendUrlToIframe() {
+      var iframe = panel.querySelector('iframe');
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({
+          type: 'EWD_PAGE_URL',
+          url: window.location.href
+        }, '*');
+      }
+    }
+
     function openPanel() {
       // Lazy-load the iframe only on first open
       if (!iframeLoaded) {
@@ -164,8 +174,13 @@
         iframe.src = WIDGET_URL;
         iframe.allow = 'clipboard-write';
         iframe.title = 'English AI Tutor';
+        iframe.onload = function() {
+          sendUrlToIframe();
+        };
         panel.appendChild(iframe);
         iframeLoaded = true;
+      } else {
+        sendUrlToIframe();
       }
       panel.classList.add('open');
       iconOpen.style.display = 'none';

@@ -596,6 +596,14 @@
     if (el) el.remove();
   }
 
+  // Listen for parent page URL sent from Wix launcher via postMessage
+  let detectedPageUrl = document.referrer || null;
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'EWD_PAGE_URL' && e.data.url) {
+      detectedPageUrl = e.data.url;
+    }
+  });
+
   async function sendMessage() {
     const question = messageInput.value.trim();
     if (!question) return;
@@ -609,9 +617,13 @@
     showTyping();
 
     try {
-      // Try to read parent page URL for page-aware answers (works when embedded in Wix iframe)
-      let pageUrl = null;
-      try { pageUrl = window.parent.location.href; } catch (_) {}
+      // Use URL received via postMessage (or document.referrer fallback)
+      let pageUrl = detectedPageUrl;
+      try {
+        if (!pageUrl && window.parent && window.parent.location) {
+          pageUrl = window.parent.location.href;
+        }
+      } catch (_) {}
 
       const res = await fetch(`${BACKEND_URL}/ask`, {
         method: 'POST',
