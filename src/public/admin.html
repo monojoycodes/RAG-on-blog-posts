@@ -28,7 +28,7 @@
     header h1 { color: white; font-size: 20px; }
     header h1 span { color: var(--gold); }
     header p { color: rgba(255,255,255,0.65); font-size: 12px; margin-top: 2px; }
-    .header-actions { display: flex; gap: 10px; }
+    .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
     .btn {
       padding: 8px 16px; border-radius: 6px; border: 1.5px solid rgba(255,255,255,0.4);
       background: transparent; color: white; cursor: pointer; font-size: 13px;
@@ -37,6 +37,8 @@
     .btn:hover { background: rgba(255,255,255,0.15); }
     .btn.primary { background: var(--gold); border-color: var(--gold); color: #1a1a1a; font-weight: 700; }
     .btn.primary:hover { background: #b8851f; }
+    .btn.ai-btn { background: #ffffff; color: var(--maroon); border-color: #ffffff; font-weight: 700; }
+    .btn.ai-btn:hover { background: var(--cream); }
 
     /* Layout */
     main { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
@@ -53,9 +55,26 @@
 
     /* Section */
     section { background: white; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 24px; overflow: hidden; }
-    section header { background: var(--cream); border-bottom: 1px solid var(--border); padding: 14px 20px; }
-    section header h2 { font-size: 15px; color: var(--maroon); }
-    .section-body { padding: 16px 20px; }
+    section header { background: var(--cream); border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; }
+    section header h2 { font-size: 15px; color: var(--maroon); display: flex; align-items: center; gap: 6px; }
+    .section-body { padding: 20px; }
+
+    /* AI Analysis box */
+    .ai-box {
+      background: #fcf9f5;
+      border: 1px solid #e8d7c3;
+      border-left: 4px solid var(--gold);
+      border-radius: 8px;
+      padding: 20px;
+      line-height: 1.7;
+      font-size: 14px;
+      color: #2c2c2c;
+    }
+    .ai-box h3 { color: var(--maroon); font-size: 16px; margin-top: 18px; margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    .ai-box h3:first-child { margin-top: 0; }
+    .ai-box ul { margin-left: 20px; margin-bottom: 12px; }
+    .ai-box li { margin-bottom: 6px; }
+    .ai-box strong { color: #111; }
 
     /* Top questions table */
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -89,9 +108,10 @@
 <header>
   <div>
     <h1>✦ <span>English AI Tutor</span> — Admin Dashboard</h1>
-    <p>englishwithadifference.com · Analytics &amp; Query Monitor</p>
+    <p>englishwithadifference.com · Analytics &amp; Intelligence Center</p>
   </div>
   <div class="header-actions">
+    <button class="btn ai-btn" onclick="loadAiAnalysis()">🤖 AI Site Insights</button>
     <button class="btn" onclick="loadDashboard()">↻ Refresh</button>
     <button class="btn primary" onclick="triggerDigest()">✉ Send Digest Now</button>
   </div>
@@ -105,6 +125,19 @@
     <div class="stat-card"><div class="value" id="stat-all">—</div><div class="label">Total All Time</div></div>
     <div class="stat-card warn"><div class="value" id="stat-fallback">—</div><div class="label">Unanswered (7d)</div></div>
   </div>
+
+  <!-- AI Insights & Site Excellence Recommendations -->
+  <section id="ai-section">
+    <header>
+      <h2>✨ AI Insights &amp; Site Content Recommendations</h2>
+      <button class="btn" style="color:var(--maroon);border-color:var(--maroon);" onclick="loadAiAnalysis()">Generate Insights</button>
+    </header>
+    <div class="section-body">
+      <div class="ai-box" id="ai-analysis-container">
+        <div class="status-msg">Click <strong>"Generate Insights"</strong> to run a Gemini AI analysis of student questions and receive content recommendations for your website.</div>
+      </div>
+    </div>
+  </section>
 
   <!-- Top Questions -->
   <section>
@@ -141,6 +174,31 @@
     t.textContent = msg;
     t.style.display = 'block';
     setTimeout(() => { t.style.display = 'none'; }, duration);
+  }
+
+  function renderMarkdown(md) {
+    return md
+      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+      .replace(/^## (.*$)/gim, '<h3>$1</h3>')
+      .replace(/^# (.*$)/gim, '<h3>$1</h3>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^\- (.*$)/gim, '<li>$1</li>')
+      .replace(/(<li>.*<\/li>)/gms, '<ul>$1</ul>')
+      .replace(/\n\n/g, '<br><br>');
+  }
+
+  async function loadAiAnalysis() {
+    const container = document.getElementById('ai-analysis-container');
+    container.innerHTML = '<div class="status-msg">⏳ Analyzing student questions with Gemini… Please wait 10-15 seconds.</div>';
+    try {
+      const res = await fetch(`${API}/admin/analysis?key=${ADMIN_KEY}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      container.innerHTML = renderMarkdown(data.analysis);
+      showToast('✨ AI Site Analysis complete!');
+    } catch (err) {
+      container.innerHTML = `<div class="status-msg" style="color:var(--red)">Failed to generate analysis: ${err.message}</div>`;
+    }
   }
 
   async function loadDashboard() {
@@ -222,9 +280,9 @@
       .replace(/"/g, '&quot;');
   }
 
-  // Auto-load on page open
+  // Auto-load dashboard stats on page open
   loadDashboard();
-  // Auto-refresh every 60 seconds
+  // Auto-refresh stats every 60 seconds
   setInterval(loadDashboard, 60000);
 </script>
 </body>

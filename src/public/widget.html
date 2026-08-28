@@ -460,13 +460,10 @@
     </div>
   </div>
 
-  <!-- SUGGESTED CHIPS -->
+  <!-- SUGGESTED CHIPS — populated dynamically from /suggestions API -->
   <div id="suggestions">
-    <div class="suggestion-chip" onclick="useSuggestion(this)">Who wrote My Mother at Sixty-Six?</div>
-    <div class="suggestion-chip" onclick="useSuggestion(this)">Explain reported speech</div>
-    <div class="suggestion-chip" onclick="useSuggestion(this)">Class 10 grammar tips</div>
-    <div class="suggestion-chip" onclick="useSuggestion(this)">Amanda poem summary</div>
-    <div class="suggestion-chip" onclick="useSuggestion(this)">Letter writing format</div>
+    <!-- Skeleton chips shown while loading -->
+    <div class="suggestion-chip" style="opacity:0.4;pointer-events:none;">Loading…</div>
   </div>
 
   <!-- MESSAGES -->
@@ -638,6 +635,21 @@
     }
   }
 
+  async function loadSuggestions() {
+    const container = document.getElementById('suggestions');
+    try {
+      const res = await fetch(`${BACKEND_URL}/suggestions`);
+      const data = await res.json();
+      if (data.chips && data.chips.length > 0) {
+        container.innerHTML = data.chips.map(chip => 
+          `<div class="suggestion-chip" onclick="useSuggestion(this)">${chip}</div>`
+        ).join('');
+      }
+    } catch (err) {
+      console.warn('Could not load dynamic suggestions, using fallbacks:', err);
+    }
+  }
+
   function useSuggestion(el) {
     messageInput.value = el.textContent;
     messageInput.style.height = 'auto';
@@ -652,6 +664,9 @@
       sendMessage();
     }
   });
+
+  // Load dynamic chips on startup
+  loadSuggestions();
 </script>
 </body>
 </html>

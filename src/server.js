@@ -73,6 +73,77 @@ app.get('/search', async (req, res) => {
   }
 });
 
+// ── Dynamic suggestion chips ──────────────────────────────────────────────────
+// Fallback chips shown before enough query data is available
+const DEFAULT_SUGGESTIONS = [
+  'Who wrote My Mother at Sixty-Six?',
+  'Explain reported speech',
+  'Class 10 grammar tips',
+  'Amanda poem summary',
+  'Letter writing format'
+];
+
+// In-memory cache (refreshes every hour)
+let suggestionCache = { chips: DEFAULT_SUGGESTIONS, updatedAt: 0 };
+const SUGGESTION_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+app.get('/suggestions', async (req, res) => {
+  const now = Date.now();
+
+  // Serve from cache if fresh
+  if (now - suggestionCache.updatedAt < SUGGESTION_TTL_MS) {
+    return res.json({ chips: suggestionCache.chips, source: 'cache' });
+  }
+
+  try {
+    // Fetch top 20 questions from the last 7 days, excluding fallbacks
+    const logs = await getRecentLogs(7, 100);
+    const nonFallback = logs.filter(l => !l.isFallback);
+
+    if (nonFallback.length < 5) {
+      // Not enough real data yet — use defaults
+      return res.json({ chips: DEFAULT_SUGGESTIONS, source: 'default' });
+    }
+
+    // Count question frequency
+    const freq = new Map();
+    nonFallback.forEach(l => {
+      const q = l.question.trim();
+      freq.set(q, (freq.get(q) || 0) + 1);
+    });
+    const topQuestions = [...freq.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([q]) => q);
+
+    // Ask Gemini to pick and rephrase the 5 best chips
+    const prompt = `You are helping design suggestion chips for an English learning chatbot for CBSE students on "English With A Difference" (englishwithadifference.com).
+
+Here are the top questions students have been asking this week:
+${topQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+Select the 5 most useful, diverse, and representative questions. Rephrase them to be short (under 8 words), clear, and suitable as quick-tap suggestion chips.
+
+Return ONLY a JSON array of 5 strings, nothing else. Example:
+["Who wrote My Mother at Sixty-Six?", "Explain reported speech", "Class 10 grammar tips", "Amanda poem summary", "Letter writing format"]`;
+
+    const answer = await generateWithRetry(prompt);
+
+    // Parse Gemini's JSON response safely
+    const jsonMatch = answer.match(/\[[\s\S]*?\]/);
+    if (!jsonMatch) throw new Error('Gemini did not return a valid JSON array');
+    const chips = JSON.parse(jsonMatch[0]).slice(0, 5);
+
+    // Update cache
+    suggestionCache = { chips, updatedAt: now };
+    res.json({ chips, source: 'ai' });
+
+  } catch (err) {
+    console.warn('[Suggestions] Falling back to defaults:', err.message);
+    res.json({ chips: DEFAULT_SUGGESTIONS, source: 'default' });
+  }
+});
+
 // ── RAG /ask endpoint ─────────────────────────────────────────────────────────
 app.post('/ask', async (req, res) => {
   const { question, pageUrl } = req.body;
@@ -175,6 +246,63 @@ app.get('/admin/data', async (req, res) => {
     ]);
     res.json({ logs, stats });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin AI Insights & Site Improvement Recommendations API
+app.get('/admin/analysis', async (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const [logs, stats] = await Promise.all([
+      getRecentLogs(7, 100),
+      getStats()
+    ]);
+
+    if (logs.length === 0) {
+      return res.json({
+        analysis: "### No Query Data Yet\n\nThere are no recorded student questions in the last 7 days to analyze. Once students interact with the AI Tutor, detailed insights and recommendations will appear here automatically."
+      });
+    }
+
+    const sampleQueries = logs
+      .map(l => `- Q: "${l.question}" | Fallback: ${l.isFallback ? 'YES (No info found)' : 'NO'}`)
+      .join('\n');
+
+    const prompt = `You are a Senior Educational Content Strategist & AI Analytics Director for the website "English With A Difference" (englishwithadifference.com), which helps CBSE Class 9-12 students master English grammar, literature, and writing skills.
+
+Analyze these real student queries from the last 7 days:
+
+Overall Stats:
+- Total queries (7d): ${stats.totalWeek}
+- Total fallbacks/unanswered (7d): ${stats.fallbackCount}
+- Top questions asked:
+${stats.topQuestions.map((q, i) => `  ${i + 1}. "${q._id}" (${q.count}x)`).join('\n')}
+
+Log of student queries:
+${sampleQueries}
+
+Generate a clear, highly structured, professional Markdown report for the website admins with the following sections:
+
+### 🎓 1. What Students Are Asking (Key Themes & Patterns)
+Synthesize the primary topics, poems, grammar rules, or chapters students are seeking help with.
+
+### ⚠️ 2. Content Gaps & Unanswered Topics
+Highlight specific questions or topics where the bot struggled or had no content to draw from.
+
+### 💡 3. Recommended Site Content Improvements for Excellence
+Give 3-5 concrete, high-impact recommendations on what new blog posts, worksheets, or explanations the website admins should publish or refine on englishwithadifference.com to make the site the ultimate reference.
+
+### 🚀 4. Priority Admin Action Items
+List 3 clear, prioritized next steps for the team.
+
+Use clear formatting, bold key terms, and bullet points. Make it insightful and actionable.`;
+
+    const analysis = await generateWithRetry(prompt);
+    res.json({ analysis, timestamp: new Date().toISOString() });
+
+  } catch (err) {
+    console.error('Admin analysis error:', err);
     res.status(500).json({ error: err.message });
   }
 });
