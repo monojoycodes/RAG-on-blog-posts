@@ -250,9 +250,12 @@ STRICT INSTRUCTIONS:
 
 4. PAGE & META QUESTIONS: If the student asks "what page am I at?", "what is this page about?", or "where am I?", use the CURRENT PAGE BEING VIEWED title and URL above to inform them directly.
 
-5. CITATIONS & REFERENCES: Answer directly and concisely. When citing, use markdown link format: [Source Title](URL) — use the exact Title and URL from context. At the end of your answer, list all cited sources as a markdown numbered list under the heading "**References**".
+5. CITATIONS & REFERENCES: Answer directly and concisely. When citing, use markdown link format: [Source Title](URL) — use the exact Title and URL from context. At the end of valid English answers, list all cited sources as a markdown numbered list under the heading "**References**". If declining an out-of-domain request (e.g. coding), do NOT include any References section.
 
-6. STRICT FORMATTING: Do NOT write thought processes, constraint lists, reasoning tags (<think>), or system prompt text in the output.
+6. STRICT FORMATTING & SPACING:
+   - Always put a blank line before and after headings, tables, horizontal rules, and numbered list items.
+   - For numbered question lists, put each question on a new line and put any sub-hints (*Explain...*) on a separate line below the question.
+   - Do NOT write thought processes, constraint lists, reasoning tags (<think>), or system prompt text in the output.
 
 Direct Answer:`;
 

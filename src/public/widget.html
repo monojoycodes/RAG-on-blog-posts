@@ -537,13 +537,64 @@
   });
 
   // Parse markdown: bold, [text](url) links, line breaks
+  // Full Markdown Renderer: Tables, Headers, Lists, Bold, Links & Line breaks
   function formatText(text) {
-    return text
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
-        '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#7B1C1C;text-decoration:underline;font-weight:500;">$1</a>')
-      .replace(/\n/g, '<br>');
+    if (!text) return '';
+    
+    // 1. Escape HTML
+    let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // 2. Parse Markdown Tables
+    html = html.replace(/(?:(?:^|\n)\|[^\n]+\|\n)+/g, (match) => {
+      const lines = match.trim().split('\n').filter(l => l.includes('|'));
+      if (lines.length < 2) return match;
+      
+      let tableHtml = '<div style="overflow-x:auto;margin:12px 0;"><table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e4d5c5;background:#fff;border-radius:6px;overflow:hidden;">';
+      
+      lines.forEach((line, idx) => {
+        if (line.includes('---')) return; // skip delimiter row
+        const cells = line.split('|').slice(1, -1).map(c => c.trim());
+        if (idx === 0) {
+          tableHtml += '<tr style="background:#7B1C1C;color:#fff;">' +
+            cells.map(c => `<th style="padding:6px 10px;text-align:left;font-size:12px;font-weight:700;">${c}</th>`).join('') +
+            '</tr>';
+        } else {
+          tableHtml += '<tr style="border-bottom:1px solid #f3e9da;">' +
+            cells.map(c => `<td style="padding:6px 10px;vertical-align:top;">${c}</td>`).join('') +
+            '</tr>';
+        }
+      });
+      
+      tableHtml += '</table></div>';
+      return tableHtml;
+    });
+
+    // 3. Parse Headers (###, ##, #)
+    html = html.replace(/^### (.*$)/gim, '<h4 style="color:#7B1C1C;margin:14px 0 6px 0;font-size:14px;font-weight:700;">$1</h4>');
+    html = html.replace(/^## (.*$)/gim, '<h3 style="color:#7B1C1C;margin:16px 0 8px 0;font-size:15px;font-weight:700;">$1</h3>');
+    html = html.replace(/^# (.*$)/gim, '<h3 style="color:#7B1C1C;margin:16px 0 8px 0;font-size:16px;font-weight:700;">$1</h3>');
+
+    // 4. Horizontal Rules
+    html = html.replace(/^---$/gim, '<hr style="border:none;border-top:1px dashed #e4d5c5;margin:14px 0;">');
+
+    // 5. Bold & Italic Sub-hints
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*([^\*\n]+)\*/g, '<em style="color:#555;display:block;margin-top:2px;font-size:13px;font-style:italic;">$1</em>');
+
+    // 6. Numbered List Item Formatting (ensure spacing before 1., 2., 3.)
+    html = html.replace(/([^\n])(\d+\.\s+[A-Z])/g, '$1<br><br>$2');
+
+    // 7. Links
+    html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#7B1C1C;text-decoration:underline;font-weight:500;">$1</a>');
+
+    // 8. Line breaks
+    html = html.replace(/\n/g, '<br>');
+
+    return html;
   }
 
   function scrollToBottom() {
@@ -571,8 +622,9 @@
     const cleanBody = role === 'bot' ? cleanAnswerBody(text) : text;
     bubble.innerHTML = formatText(cleanBody);
 
-    // Render sources as numbered reference pills
-    if (sources && sources.length > 0) {
+    // Render sources as numbered reference pills ONLY if it's a valid RAG answer (not an out-of-domain refusal)
+    const isRefusal = cleanBody.includes('cannot assist with coding') || cleanBody.includes('English AI Tutor specializing');
+    if (sources && sources.length > 0 && !isRefusal) {
       const srcContainer = document.createElement('div');
       srcContainer.className = 'sources-container';
       srcContainer.innerHTML = '<div class="sources-label">References</div>';
