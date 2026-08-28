@@ -20,6 +20,39 @@ const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 const SCRAPED_FILE = path.join(DATA_DIR, 'scraped_pages.json');
 const INDEXED_FILE = path.join(DATA_DIR, 'indexed_pages.json');
 
+/**
+ * Directly fetch chunks from MongoDB for a specific page URL.
+ */
+export async function getChunksByUrl(pageUrl, limit = 3) {
+  if (!pageUrl) return [];
+  try {
+    // Extract path (e.g. /post/my-mother-at-sixty-six-by-kamala-das)
+    let urlPath = pageUrl;
+    try {
+      urlPath = new URL(pageUrl).pathname;
+    } catch (_) {}
+
+    if (!urlPath || urlPath === '/') return [];
+
+    const col = await getMongoCollection();
+    const chunks = await col
+      .find({ url: { $regex: urlPath.replace(/\/$/, ''), $options: 'i' } })
+      .limit(limit)
+      .toArray();
+
+    return chunks.map(c => ({
+      title: c.title,
+      url: c.url,
+      text: c.text,
+      score: 1.0
+    }));
+  } catch (err) {
+    console.warn('[search.js] Failed to fetch page-specific chunks:', err.message);
+    return [];
+  }
+}
+
+
 // Singleton embedder to avoid reloading the model multiple times
 let embedderInstance = null;
 

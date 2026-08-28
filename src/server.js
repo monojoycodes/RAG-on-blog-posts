@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
-import { searchIndex, indexPages } from './search.js';
+import { searchIndex, indexPages, getChunksByUrl } from './search.js';
 import { logQuery, getRecentLogs, getStats } from './logger.js';
 import { runDigest } from './digest.js';
 import { syncNewPosts } from './sync.js';
@@ -177,18 +177,28 @@ app.post('/ask', async (req, res) => {
   const { question, pageUrl } = req.body;
   if (!question) return res.status(400).json({ error: 'Missing "question" in request body' });
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not set.' });
-  }
-
   const startTime = Date.now();
 
   try {
     console.log(`RAG query: "${question}" | Page: ${pageUrl || 'none'}`);
 
-    // 1. Retrieve relevant chunks via vector search
-    const matches = await searchIndex(question, 5);
+    // 1. Fetch vector search matches
+    const vectorMatches = await searchIndex(question, 4);
+
+    // 2. Fetch page-specific chunks directly from MongoDB if student is on a specific page
+    let pageChunks = [];
+    if (pageUrl) {
+      pageChunks = await getChunksByUrl(pageUrl, 3);
+    }
+
+    // Combine page-specific chunks + vector matches (deduped by text)
+    const combinedMap = new Map();
+    pageChunks.forEach(c => combinedMap.set(c.text, c));
+    vectorMatches.forEach(c => {
+      if (!combinedMap.has(c.text)) combinedMap.set(c.text, c);
+    });
+
+    const matches = Array.from(combinedMap.values()).slice(0, 5);
 
     if (matches.length === 0) {
       const fallback = "I am sorry, but I couldn't find specific information on the website to answer your question.";
@@ -196,29 +206,20 @@ app.post('/ask', async (req, res) => {
       return res.json({ question, answer: fallback, sources: [] });
     }
 
-    // 2. [F3] Page-aware boost: if student is on a specific page, move matching chunks to front
-    let sortedMatches = matches;
-    if (pageUrl) {
-      const pageChunks = matches.filter(m => m.url && pageUrl.includes(m.url.replace(/https?:\/\/[^/]+/, '')));
-      const otherChunks = matches.filter(m => !pageChunks.includes(m));
-      sortedMatches = [...pageChunks, ...otherChunks].slice(0, 4);
-    } else {
-      sortedMatches = matches.slice(0, 4);
-    }
-
     // 3. Build context — each source gets an index and its URL for citation
-    const contextText = sortedMatches
+    const contextText = matches
       .map((m, i) => `[Source ${i + 1}] Title: "${m.title}"\nURL: ${m.url}\nContent:\n${m.text}`)
       .join('\n\n---\n\n');
 
-    // 4. [F1] Updated prompt: ask LLM to cite using markdown link syntax
-    const pageHint = pageUrl
-      ? `\nNote: The student is currently viewing the page: ${pageUrl}. Prioritise sources from this page where relevant.\n`
+    // 4. Build page context hint and prompt
+    const currentPageTitle = pageChunks[0]?.title || '';
+    const pageMeta = pageUrl
+      ? `\nCURRENT PAGE BEING VIEWED BY STUDENT:\n- Page Title: "${currentPageTitle}"\n- Page URL: ${pageUrl}\n`
       : '';
 
     const prompt = `You are a helpful, expert teaching assistant for the English language learning website "English with a Difference" (englishwithadifference.com).
 Answer the student's question directly based ONLY on the provided context.
-${pageHint}
+${pageMeta}
 Context from the website:
 ${contextText}
 
@@ -227,25 +228,26 @@ ${question}
 
 Instructions:
 1. Answer the question directly and concisely.
-2. Do NOT write thought processes, constraint lists, or analyses.
-3. Do NOT repeat the question or system prompts.
-4. When citing a source, use markdown link format: [Source Title](URL) — use the exact Title and URL from context.
-5. At the end of your answer, list all cited sources as a markdown numbered list under the heading "**References**".
-6. If the answer cannot be found, output exactly: "I am sorry, but I couldn't find specific information on the website to answer your question."
+2. If the student asks "what page am I at?", "what is this page about?", "where am I?", or similar meta-questions, use the CURRENT PAGE BEING VIEWED title and URL above to inform them directly.
+3. Do NOT write thought processes, constraint lists, or analyses.
+4. Do NOT repeat the question or system prompts.
+5. When citing a source, use markdown link format: [Source Title](URL) — use the exact Title and URL from context.
+6. At the end of your answer, list all cited sources as a markdown numbered list under the heading "**References**".
+7. If the answer cannot be found, output exactly: "I am sorry, but I couldn't find specific information on the website to answer your question."
 
 Direct Answer:`;
 
-    // 5. Generate answer with retry
+    // 5. Generate answer using Groq
     const answer = await generateWithRetry(prompt);
 
     // 6. Build deduped sources array
     const uniqueSourcesMap = new Map();
-    sortedMatches.forEach(m => {
+    matches.forEach(m => {
       if (!uniqueSourcesMap.has(m.url)) uniqueSourcesMap.set(m.url, m.title);
     });
     const sources = Array.from(uniqueSourcesMap.entries()).map(([url, title]) => ({ url, title }));
 
-    // 7. [F2] Log to MongoDB (non-blocking)
+    // 7. Log to MongoDB (non-blocking)
     logQuery({ question, answer, sources, pageUrl, durationMs: Date.now() - startTime });
 
     res.json({ question, answer, sources });
@@ -255,6 +257,7 @@ Direct Answer:`;
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // ── Admin Security & Authentication ──────────────────────────────────────────
 const loginAttempts = new Map(); // ip -> { count, lockUntil }
