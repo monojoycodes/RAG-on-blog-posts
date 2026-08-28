@@ -626,6 +626,9 @@
     } catch (_) {}
   }
 
+  // Conversation memory tracking (last 6 turns)
+  const chatHistory = [];
+
   // Listen for parent page URL sent from Wix launcher via postMessage
   let detectedPageUrl = document.referrer || null;
   window.addEventListener('message', (e) => {
@@ -655,14 +658,22 @@
         }
       } catch (_) {}
 
+      // Get recent history snapshot (last 6 turns)
+      const historySnapshot = chatHistory.slice(-6);
+
       const res = await fetch(`${BACKEND_URL}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, pageUrl }),
+        body: JSON.stringify({ question, pageUrl, history: historySnapshot }),
       });
       const data = await res.json();
       removeTyping();
       if (res.ok) {
+        // Save turn to local history
+        chatHistory.push({ role: 'user', content: question });
+        chatHistory.push({ role: 'bot', content: data.answer });
+        if (chatHistory.length > 10) chatHistory.splice(0, 2);
+
         appendMessage('bot', data.answer, data.sources);
       } else {
         const isQuotaErr = data.error && (data.error.includes('429') || data.error.includes('quota') || data.error.includes('GoogleGenerativeAI'));

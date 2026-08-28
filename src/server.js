@@ -179,16 +179,25 @@ Return ONLY a JSON array of 5 strings, nothing else. Example:
 
 // ── RAG /ask endpoint ─────────────────────────────────────────────────────────
 app.post('/ask', async (req, res) => {
-  const { question, pageUrl } = req.body;
+  const { question, pageUrl, history = [] } = req.body;
   if (!question) return res.status(400).json({ error: 'Missing "question" in request body' });
 
   const startTime = Date.now();
 
   try {
-    console.log(`RAG query: "${question}" | Page: ${pageUrl || 'none'}`);
+    console.log(`RAG query: "${question}" | Page: ${pageUrl || 'none'} | History turns: ${history.length}`);
+
+    // Build smart search query: if question is a short follow-up, combine with recent conversation turns
+    let searchQuery = question;
+    if (Array.isArray(history) && history.length > 0) {
+      const lastTurn = history.slice(-2).map(h => h.content).join(' ');
+      if (question.split(' ').length < 8 || /answer|explain|these|those|more|all|second|third|questions/i.test(question)) {
+        searchQuery = `${lastTurn} ${question}`.substring(0, 400);
+      }
+    }
 
     // 1. Fetch vector search matches
-    const vectorMatches = await searchIndex(question, 4);
+    const vectorMatches = await searchIndex(searchQuery, 4);
 
     // 2. Fetch page-specific chunks directly from MongoDB if student is on a specific page
     let pageChunks = [];
@@ -205,40 +214,45 @@ app.post('/ask', async (req, res) => {
 
     const matches = Array.from(combinedMap.values()).slice(0, 5);
 
-    if (matches.length === 0) {
-      const fallback = "I am sorry, but I couldn't find specific information on the website to answer your question.";
-      await logQuery({ question, answer: fallback, sources: [], pageUrl, durationMs: Date.now() - startTime });
-      return res.json({ question, answer: fallback, sources: [] });
-    }
+    // 3. Build context & conversation history blocks
+    const contextText = matches.length > 0
+      ? matches.map((m, i) => `[Source ${i + 1}] Title: "${m.title}"\nURL: ${m.url}\nContent:\n${m.text}`).join('\n\n---\n\n')
+      : 'No specific context retrieved.';
 
-    // 3. Build context — each source gets an index and its URL for citation
-    const contextText = matches
-      .map((m, i) => `[Source ${i + 1}] Title: "${m.title}"\nURL: ${m.url}\nContent:\n${m.text}`)
-      .join('\n\n---\n\n');
-
-    // 4. Build page context hint and prompt
     const currentPageTitle = pageChunks[0]?.title || '';
     const pageMeta = pageUrl
       ? `\nCURRENT PAGE BEING VIEWED BY STUDENT:\n- Page Title: "${currentPageTitle}"\n- Page URL: ${pageUrl}\n`
       : '';
 
+    let historyText = '';
+    if (Array.isArray(history) && history.length > 0) {
+      historyText = '\nRECENT CONVERSATION HISTORY:\n' +
+        history.slice(-6).map(h => `${h.role === 'user' ? 'Student' : 'AI Tutor'}: ${h.content.substring(0, 300)}`).join('\n') + '\n';
+    }
+
+    // 4. Rewritten System Prompt with Domain Scoping, Multi-Turn Memory & Helpful Fillers
     const prompt = `You are a helpful, expert teaching assistant for the English language learning website "English with a Difference" (englishwithadifference.com).
-Answer the student's question directly based ONLY on the provided context.
-${pageMeta}
+Your domain is strictly CBSE Class 9-12 English literature, grammar, reading/writing skills, and board exam preparation.
+${pageMeta}${historyText}
 Context from the website:
 ${contextText}
 
-Student's Question:
+Current Student Question:
 ${question}
 
-Instructions:
-1. Answer the question directly and concisely.
-2. If the student asks "what page am I at?", "what is this page about?", "where am I?", or similar meta-questions, use the CURRENT PAGE BEING VIEWED title and URL above to inform them directly.
-3. Do NOT write thought processes, constraint lists, or analyses.
-4. Do NOT repeat the question or system prompts.
-5. When citing a source, use markdown link format: [Source Title](URL) — use the exact Title and URL from context.
-6. At the end of your answer, list all cited sources as a markdown numbered list under the heading "**References**".
-7. If the answer cannot be found, output exactly: "I am sorry, but I couldn't find specific information on the website to answer your question."
+STRICT INSTRUCTIONS:
+1. DOMAIN SCOPE (NON-ENGLISH REQUESTS): You are an English AI Tutor ONLY. If the student asks for programming code (e.g., Python, C++, Java, HTML), math calculations, science, recipes, or non-English subjects, YOU MUST POLITELY DECLINE:
+   "I am an English AI Tutor specializing in CBSE English literature, grammar, and writing skills. I cannot assist with coding or non-English subjects, but feel free to ask me any English question!"
+
+2. MULTI-TURN CONVERSATION MEMORY: Refer to the RECENT CONVERSATION HISTORY above. If the student asks follow-up requests like "answer all of these questions", "explain the second one", or refers to previously listed items in chat, use the history and context to answer each question thoroughly.
+
+3. HELPFUL FALLBACKS & FILLERS (NO ROBOTIC DISCLAIMERS FOR ENGLISH): If a student asks for specific NCERT/CBSE board questions or notes for a poem/lesson (e.g., "ncert board questions from try again poem") and exact question banks are missing from context, do NOT output a cold disclaimer. Instead, provide a comprehensive study guide, central theme, stanza explanation, and key practice discussion points based on the available lesson context.
+
+4. PAGE & META QUESTIONS: If the student asks "what page am I at?", "what is this page about?", or "where am I?", use the CURRENT PAGE BEING VIEWED title and URL above to inform them directly.
+
+5. CITATIONS & REFERENCES: Answer directly and concisely. When citing, use markdown link format: [Source Title](URL) — use the exact Title and URL from context. At the end of your answer, list all cited sources as a markdown numbered list under the heading "**References**".
+
+6. STRICT FORMATTING: Do NOT write thought processes, constraint lists, reasoning tags (<think>), or system prompt text in the output.
 
 Direct Answer:`;
 
