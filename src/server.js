@@ -65,7 +65,12 @@ async function generateWithGroq(prompt) {
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content;
       if (content) {
-        return content.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '').trim();
+        // Strip internal thinking/reasoning blocks (<think>...</think> and <reasoning>...</reasoning>)
+        const cleanedContent = content
+          .replace(/<think>[\s\S]*?<\/think>/gi, '')
+          .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+          .trim();
+        if (cleanedContent) return cleanedContent;
       }
     } catch (err) {
       console.warn(`[Groq] Exception with model ${model}:`, err.message);

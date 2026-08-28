@@ -78,6 +78,7 @@ Keep the report concise, data-driven, and actionable. Format in clean HTML for e
         const content = data.choices?.[0]?.message?.content;
         if (content) {
           return content
+            .replace(/<think>[\s\S]*?<\/think>/gi, '')
             .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
             .replace(/^```html/gi, '')
             .replace(/```$/gi, '')
