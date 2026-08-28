@@ -101,7 +101,7 @@ async function sendEmail(subject, htmlBody) {
   const recipients = 'himonotosh@gmail.com, monojoydey9@gmail.com';
 
   if (!pass) {
-    throw new Error('GMAIL_APP_PASSWORD is missing in Render environment variables. Please add GMAIL_APP_PASSWORD = fvnmpvbkvwtclmqy in Render Dashboard -> Environment.');
+    throw new Error('GMAIL_APP_PASSWORD is missing in Render environment variables. Please add GMAIL_APP_PASSWORD in Render Dashboard -> Environment.');
   }
 
   const transporter = nodemailer.createTransport({
