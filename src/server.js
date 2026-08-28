@@ -38,8 +38,8 @@ async function generateWithGroq(prompt) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY is not set in environment variables');
 
-  // Fallback chain across active Groq LPU models
-  const models = ['groq/compound-mini', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b'];
+  // Direct non-reasoning models first (240ms latency, zero <think> tags)
+  const models = ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
 
   for (const model of models) {
     try {

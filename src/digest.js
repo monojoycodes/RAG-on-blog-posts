@@ -57,7 +57,7 @@ Please provide a concise analytics report with:
 
 Keep the report concise, data-driven, and actionable. Format in clean HTML for email body (use <h3>, <p>, <ul>, <li>, <strong> tags). Do NOT wrap in markdown code blocks like \`\`\`html.`;
 
-  const models = ['groq/compound-mini', 'qwen/qwen3.6-27b'];
+  const models = ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'groq/compound-mini'];
   for (const model of models) {
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
