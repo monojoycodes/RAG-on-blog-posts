@@ -34,9 +34,42 @@ app.get('/', (req, res) => {
   });
 });
 
-// ── Gemini with exponential backoff retry ─────────────────────────────────────
-async function generateWithRetry(prompt, maxRetries = 3) {
+// ── Groq API call helper (Primary Ultra-Fast Engine) ────────────────────────
+async function generateWithGroq(prompt) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error('GROQ_API_KEY is not set');
+
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'groq/compound-mini', // Ultra-fast LPU engine routing to Llama 3.3 70B internally
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2
+    })
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Groq API error HTTP ${res.status}: ${errorText}`);
+  }
+
+  const data = await res.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('Groq returned empty response body');
+
+  // Strip internal reasoning tags if present
+  return content.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '').trim();
+}
+
+// ── Gemini call helper (Backup Engine) ────────────────────────────────────────
+async function generateWithGemini(prompt, maxRetries = 2) {
   const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
+
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
@@ -49,7 +82,7 @@ async function generateWithRetry(prompt, maxRetries = 3) {
       lastError = err;
       const isRateLimit = err.status === 429 || (err.message && err.message.includes('429'));
       if (isRateLimit && attempt < maxRetries) {
-        const backoffMs = Math.pow(2, attempt) * 1500; // 3s, 6s, 12s
+        const backoffMs = attempt * 1500;
         console.warn(`[Gemini] Rate limited. Retry ${attempt}/${maxRetries} in ${backoffMs}ms...`);
         await new Promise(r => setTimeout(r, backoffMs));
       } else {
@@ -59,6 +92,24 @@ async function generateWithRetry(prompt, maxRetries = 3) {
   }
   throw lastError;
 }
+
+// ── Hybrid LLM Engine: Groq Primary ⚡ → Gemini Backup 🛡 ─────────────────────
+async function generateWithRetry(prompt) {
+  try {
+    // 1. Try Groq (Ultra-fast ~1s turnaround)
+    return await generateWithGroq(prompt);
+  } catch (groqErr) {
+    console.warn(`[LLM Engine] Groq error (${groqErr.message}). Falling back to Gemini 3.6 Flash...`);
+    try {
+      // 2. Fallback to Gemini 3.6 Flash
+      return await generateWithGemini(prompt);
+    } catch (geminiErr) {
+      console.error('[LLM Engine] Both Groq and Gemini failed:', geminiErr.message);
+      throw geminiErr;
+    }
+  }
+}
+
 
 // ── Semantic search ───────────────────────────────────────────────────────────
 app.get('/search', async (req, res) => {
