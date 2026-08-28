@@ -101,7 +101,7 @@ async function sendEmail(subject, htmlBody) {
   const recipients = 'himonotosh@gmail.com, monojoydey9@gmail.com';
 
   if (!pass) {
-    throw new Error('GMAIL_APP_PASSWORD not set in .env — see digest.js for setup instructions');
+    throw new Error('GMAIL_APP_PASSWORD is missing in Render environment variables. Please add GMAIL_APP_PASSWORD = fvnmpvbkvwtclmqy in Render Dashboard -> Environment.');
   }
 
   const transporter = nodemailer.createTransport({
@@ -149,7 +149,7 @@ export async function runDigest() {
     return { skipped: true, reason: 'No queries in the last 7 days' };
   }
 
-  console.log(`[Digest] Summarising ${logs.length} queries with Gemini...`);
+  console.log(`[Digest] Summarising ${logs.length} queries with Groq LPU engine...`);
   const summary = await generateDigestSummary(logs, stats);
 
   const subject = `✦ English AI Tutor Weekly Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
@@ -161,3 +161,4 @@ export async function runDigest() {
     stats
   };
 }
+
