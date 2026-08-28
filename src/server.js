@@ -3,7 +3,6 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { searchIndex, indexPages } from './search.js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logQuery, getRecentLogs, getStats } from './logger.js';
 import { runDigest } from './digest.js';
 import { syncNewPosts } from './sync.js';
@@ -22,25 +21,25 @@ app.use(express.static(path.join(process.cwd(), 'src', 'public')));
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    message: 'English AI Tutor RAG Pipeline is running.',
+    message: 'English AI Tutor RAG Pipeline is running (Powered by Groq).',
     endpoints: {
       search: 'GET /search?q=query_text',
       ask: 'POST /ask { "question": "...", "pageUrl": "(optional)" }',
-      admin: 'GET /admin?key=ADMIN_KEY',
-      adminData: 'GET /admin/data?key=ADMIN_KEY',
-      digest: 'POST /digest { "key": "ADMIN_KEY" }',
-      sync: 'POST /sync { "key": "ADMIN_KEY" }',
+      admin: 'GET /admin',
+      adminData: 'GET /admin/data',
+      digest: 'POST /digest',
+      sync: 'POST /sync',
     }
   });
 });
 
-// ── Groq API call helper (Primary Ultra-Fast Engine) ────────────────────────
+// ── Groq API Engine (Exclusive Ultra-Fast Provider) ──────────────────────────
 async function generateWithGroq(prompt) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY is not set in environment variables');
 
-  // Try primary model (groq/compound-mini), fallback to qwen/qwen3.6-27b if needed
-  const models = ['groq/compound-mini', 'qwen/qwen3.6-27b'];
+  // Fallback chain across active Groq LPU models
+  const models = ['groq/compound-mini', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b'];
 
   for (const model of models) {
     try {
@@ -60,7 +59,7 @@ async function generateWithGroq(prompt) {
       if (!res.ok) {
         const errorText = await res.text();
         console.warn(`[Groq] Model ${model} returned HTTP ${res.status}: ${errorText}`);
-        continue; // Try next model
+        continue; // Try next Groq model
       }
 
       const data = await res.json();
@@ -76,50 +75,16 @@ async function generateWithGroq(prompt) {
   throw new Error('All Groq models failed or rate-limited.');
 }
 
-// ── Gemini call helper (Backup Engine) ────────────────────────────────────────
-async function generateWithGemini(prompt, maxRetries = 2) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-
-  let lastError;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await model.generateContent(prompt);
-      return result.response.text().trim();
-    } catch (err) {
-      lastError = err;
-      const isRateLimit = err.status === 429 || (err.message && err.message.includes('429'));
-      if (isRateLimit && attempt < maxRetries) {
-        const backoffMs = attempt * 1500;
-        console.warn(`[Gemini] Rate limited. Retry ${attempt}/${maxRetries} in ${backoffMs}ms...`);
-        await new Promise(r => setTimeout(r, backoffMs));
-      } else {
-        throw err;
-      }
-    }
-  }
-  throw lastError;
-}
-
-// ── Hybrid LLM Engine: Groq Primary ⚡ → Gemini Backup 🛡 ─────────────────────
+// ── Unified LLM Generation Function (Groq Exclusive) ────────────────────────
 async function generateWithRetry(prompt) {
   try {
-    // 1. Try Groq (Ultra-fast ~1s turnaround, 14,400 RPD)
     return await generateWithGroq(prompt);
-  } catch (groqErr) {
-    console.warn(`[LLM Engine] Groq unavailable (${groqErr.message}). Falling back to Gemini...`);
-    try {
-      // 2. Fallback to Gemini
-      return await generateWithGemini(prompt);
-    } catch (geminiErr) {
-      console.error('[LLM Engine] All LLM providers failed:', geminiErr.message);
-      throw new Error('Our AI servers are experiencing high traffic right now. Please try again in a few moments.');
-    }
+  } catch (err) {
+    console.error('[LLM Engine] Groq error:', err.message);
+    throw new Error('Our AI servers are experiencing high traffic right now. Please try again in a few moments.');
   }
 }
+
 
 
 

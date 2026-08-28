@@ -19,19 +19,18 @@
  */
 
 import nodemailer from 'nodemailer';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getRecentLogs, getStats } from './logger.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
 /**
- * Generate a Gemini-powered digest summary from recent query logs.
+ * Generate a Groq-powered digest summary from recent query logs.
  */
 async function generateDigestSummary(logs, stats) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY not set');
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error('GROQ_API_KEY is not set in environment variables');
 
-  // Prepare a condensed view of recent queries for Gemini
+  // Prepare a condensed view of recent queries for Groq
   const sampleQueries = logs
     .slice(0, 50)
     .map(l => `Q: ${l.question} | Fallback: ${l.isFallback ? 'YES' : 'no'}`)
@@ -56,12 +55,41 @@ Please provide a concise analytics report with:
 4. **Action Items**: Specific recommendations for the website owner to improve the chatbot's coverage. (bullet points)
 5. **Response Quality Note**: Any patterns in how the bot is answering (good or bad)?
 
-Keep the report concise, data-driven, and actionable. Format in plain HTML for email.`;
+Keep the report concise, data-driven, and actionable. Format in clean HTML for email body (use <h3>, <p>, <ul>, <li>, <strong> tags). Do NOT wrap in markdown code blocks like \`\`\`html.`;
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+  const models = ['groq/compound-mini', 'qwen/qwen3.6-27b'];
+  for (const model of models) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) {
+          return content
+            .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+            .replace(/^```html/gi, '')
+            .replace(/```$/gi, '')
+            .trim();
+        }
+      }
+    } catch (err) {
+      console.warn(`[Digest Groq] Model ${model} failed:`, err.message);
+    }
+  }
+
+  throw new Error('Groq failed to generate digest summary.');
 }
 
 /**
