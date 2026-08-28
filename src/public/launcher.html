@@ -97,6 +97,10 @@
     #ewd-chat-panel.open {
       transform: translateY(0);
     }
+    /* Hide floating FAB button on mobile when panel is open so it NEVER covers input box or send button */
+    #ewd-chat-panel.open ~ #ewd-chat-btn {
+      display: none !important;
+    }
     #ewd-chat-btn {
       bottom: 16px;
       right: 16px;
@@ -119,24 +123,21 @@
   }
 </style>
 
-<!-- Notification dot (hidden after first open) -->
-<div id="ewd-notif-dot"></div>
-
-<!-- Floating Button -->
-<button id="ewd-chat-btn" aria-label="Open AI English Tutor">
-  <!-- Open icon: sparkle star -->
-  <svg id="ewd-icon-open" width="28" height="28" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+<!-- Floating Chat Button (FAB) -->
+<button id="ewd-chat-btn" aria-label="Open English AI Tutor Chat">
+  <!-- AI Star Logo (✦) -->
+  <svg id="ewd-icon-open" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M18 4 L19.8 14.2 L30 16 L19.8 17.8 L18 28 L16.2 17.8 L6 16 L16.2 14.2 Z" fill="#c8962c"/>
-    <path d="M27 6 L27.8 9.2 L31 10 L27.8 10.8 L27 14 L26.2 10.8 L23 10 L26.2 9.2 Z" fill="rgba(200,150,44,0.75)"/>
+    <path d="M27 6 L27.8 9.2 L31 10 L27.8 10.8 L27 14 L26.2 10.8 L23 10 L26.2 9.2 Z" fill="rgba(200,150,44,0.7)"/>
     <path d="M8 22 L8.6 24.4 L11 25 L8.6 25.6 L8 28 L7.4 25.6 L5 25 L7.4 24.4 Z" fill="rgba(200,150,44,0.5)"/>
   </svg>
-  <!-- Close icon (shown when panel is open) -->
-  <svg id="ewd-icon-close" width="22" height="22" viewBox="0 0 24 24" fill="none"
-       stroke="white" stroke-width="2.5" stroke-linecap="round"
-       style="display:none;">
+  <!-- Close Icon (✕) -->
+  <svg id="ewd-icon-close" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" style="display:none;">
     <line x1="18" y1="6" x2="6" y2="18"/>
     <line x1="6" y1="6" x2="18" y2="18"/>
   </svg>
+  <!-- Notification Dot -->
+  <span id="ewd-notif-dot"></span>
 </button>
 
 <!-- Chat Panel (iframe) -->
@@ -146,7 +147,6 @@
 
 <script>
   (function() {
-    // ⬇ REPLACE THIS with your actual Render deployment URL
     var WIDGET_URL = 'https://rag-on-blog-posts.onrender.com/widget.html';
 
     var btn         = document.getElementById('ewd-chat-btn');
@@ -168,7 +168,6 @@
     }
 
     function openPanel() {
-      // Lazy-load the iframe only on first open
       if (!iframeLoaded) {
         var iframe = document.createElement('iframe');
         iframe.src = WIDGET_URL;
@@ -198,6 +197,13 @@
 
     btn.addEventListener('click', function() {
       isOpen ? closePanel() : openPanel();
+    });
+
+    // Listen for close request from widget header
+    window.addEventListener('message', function(e) {
+      if (e.data && e.data.type === 'EWD_CLOSE_CHAT') {
+        closePanel();
+      }
     });
 
     // Close on Escape key
