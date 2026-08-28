@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Tutor — Admin Dashboard</title>
+  <style>
+    :root {
+      --maroon: #7B1C1C;
+      --maroon-dark: #5a1414;
+      --gold: #c8962c;
+      --cream: #fdf6ee;
+      --border: #e4d5c5;
+      --green: #16a34a;
+      --red: #dc2626;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, serif; background: var(--cream); color: #1a1a1a; min-height: 100vh; }
+
+    /* Header */
+    header {
+      background: linear-gradient(135deg, var(--maroon), var(--maroon-dark));
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { color: white; font-size: 20px; }
+    header h1 span { color: var(--gold); }
+    header p { color: rgba(255,255,255,0.65); font-size: 12px; margin-top: 2px; }
+    .header-actions { display: flex; gap: 10px; }
+    .btn {
+      padding: 8px 16px; border-radius: 6px; border: 1.5px solid rgba(255,255,255,0.4);
+      background: transparent; color: white; cursor: pointer; font-size: 13px;
+      font-family: Georgia, serif; transition: all 0.2s;
+    }
+    .btn:hover { background: rgba(255,255,255,0.15); }
+    .btn.primary { background: var(--gold); border-color: var(--gold); color: #1a1a1a; font-weight: 700; }
+    .btn.primary:hover { background: #b8851f; }
+
+    /* Layout */
+    main { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
+
+    /* Stat cards */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .stat-card {
+      background: white; border: 1px solid var(--border); border-radius: 12px;
+      padding: 18px 20px; text-align: center;
+    }
+    .stat-card .value { font-size: 36px; font-weight: 700; color: var(--maroon); line-height: 1; }
+    .stat-card .label { font-size: 12px; color: #888; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-card.warn .value { color: var(--red); }
+
+    /* Section */
+    section { background: white; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 24px; overflow: hidden; }
+    section header { background: var(--cream); border-bottom: 1px solid var(--border); padding: 14px 20px; }
+    section header h2 { font-size: 15px; color: var(--maroon); }
+    .section-body { padding: 16px 20px; }
+
+    /* Top questions table */
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+    td { padding: 10px 10px; border-bottom: 1px solid #f3e9da; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    .count-badge { display: inline-block; background: var(--maroon); color: white; border-radius: 20px; padding: 2px 9px; font-size: 12px; }
+
+    /* Query feed */
+    .query-feed { display: flex; flex-direction: column; gap: 12px; max-height: 520px; overflow-y: auto; }
+    .query-item { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-size: 13px; }
+    .query-item.fallback { border-color: #fca5a5; background: #fff5f5; }
+    .query-q { font-weight: 700; color: var(--maroon); margin-bottom: 4px; }
+    .query-a { color: #444; line-height: 1.5; }
+    .query-meta { margin-top: 6px; font-size: 11px; color: #999; display: flex; gap: 12px; flex-wrap: wrap; }
+    .query-meta a { color: var(--maroon); text-decoration: none; }
+    .fallback-tag { color: var(--red); font-weight: 700; }
+
+    /* Loading / error */
+    .status-msg { text-align: center; padding: 40px; color: #999; font-style: italic; }
+    .toast { position: fixed; bottom: 24px; right: 24px; background: #1a1a1a; color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px; display: none; z-index: 9999; }
+
+    @media (max-width: 600px) {
+      header { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>✦ <span>English AI Tutor</span> — Admin Dashboard</h1>
+    <p>englishwithadifference.com · Analytics &amp; Query Monitor</p>
+  </div>
+  <div class="header-actions">
+    <button class="btn" onclick="loadDashboard()">↻ Refresh</button>
+    <button class="btn primary" onclick="triggerDigest()">✉ Send Digest Now</button>
+  </div>
+</header>
+
+<main>
+  <!-- Stats -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card"><div class="value" id="stat-today">—</div><div class="label">Queries Today</div></div>
+    <div class="stat-card"><div class="value" id="stat-week">—</div><div class="label">Queries This Week</div></div>
+    <div class="stat-card"><div class="value" id="stat-all">—</div><div class="label">Total All Time</div></div>
+    <div class="stat-card warn"><div class="value" id="stat-fallback">—</div><div class="label">Unanswered (7d)</div></div>
+  </div>
+
+  <!-- Top Questions -->
+  <section>
+    <header><h2>🏆 Top Questions This Week</h2></header>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>#</th><th>Question</th><th>Times Asked</th></tr></thead>
+        <tbody id="top-questions-body">
+          <tr><td colspan="3" class="status-msg">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Live Feed -->
+  <section>
+    <header><h2>📋 Recent Queries (Last 20)</h2></header>
+    <div class="section-body">
+      <div class="query-feed" id="query-feed">
+        <div class="status-msg">Loading...</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const API = window.location.origin;
+  const ADMIN_KEY = new URLSearchParams(window.location.search).get('key') || '';
+
+  function showToast(msg, duration = 3500) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, duration);
+  }
+
+  async function loadDashboard() {
+    try {
+      const res = await fetch(`${API}/admin/data?key=${ADMIN_KEY}`);
+      if (res.status === 403) {
+        document.querySelector('main').innerHTML = '<div class="status-msg" style="padding:80px;font-size:18px;">⛔ Invalid admin key. Add ?key=YOUR_ADMIN_KEY to the URL.</div>';
+        return;
+      }
+      const data = await res.json();
+
+      // Stats
+      document.getElementById('stat-today').textContent = data.stats.totalToday;
+      document.getElementById('stat-week').textContent = data.stats.totalWeek;
+      document.getElementById('stat-all').textContent = data.stats.totalAll;
+      document.getElementById('stat-fallback').textContent = data.stats.fallbackCount;
+
+      // Top questions
+      const tbody = document.getElementById('top-questions-body');
+      if (data.stats.topQuestions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="status-msg">No data yet.</td></tr>';
+      } else {
+        tbody.innerHTML = data.stats.topQuestions.map((q, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${escHtml(q._id)}</td>
+            <td><span class="count-badge">${q.count}×</span></td>
+          </tr>
+        `).join('');
+      }
+
+      // Recent query feed
+      const feed = document.getElementById('query-feed');
+      if (data.logs.length === 0) {
+        feed.innerHTML = '<div class="status-msg">No queries logged yet.</div>';
+      } else {
+        feed.innerHTML = data.logs.map(l => `
+          <div class="query-item ${l.isFallback ? 'fallback' : ''}">
+            <div class="query-q">Q: ${escHtml(l.question)}</div>
+            <div class="query-a">${escHtml(l.answer.substring(0, 220))}${l.answer.length > 220 ? '…' : ''}</div>
+            <div class="query-meta">
+              <span>${new Date(l.timestamp).toLocaleString('en-IN')}</span>
+              <span>${l.durationMs ? l.durationMs + 'ms' : ''}</span>
+              ${l.pageUrl ? `<a href="${l.pageUrl}" target="_blank">📄 Page context</a>` : ''}
+              ${l.isFallback ? '<span class="fallback-tag">⚠ No answer found</span>' : ''}
+            </div>
+          </div>
+        `).join('');
+      }
+    } catch (err) {
+      showToast('Failed to load dashboard: ' + err.message);
+    }
+  }
+
+  async function triggerDigest() {
+    showToast('Sending digest email… this may take 30 seconds.');
+    try {
+      const res = await fetch(`${API}/digest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: ADMIN_KEY })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`✅ Digest sent! Analysed ${data.queriesAnalysed} queries.`, 5000);
+      } else if (data.skipped) {
+        showToast('ℹ No queries in the last 7 days — digest skipped.', 4000);
+      } else {
+        showToast('❌ Error: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      showToast('❌ Failed to send digest: ' + err.message);
+    }
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Auto-load on page open
+  loadDashboard();
+  // Auto-refresh every 60 seconds
+  setInterval(loadDashboard, 60000);
+</script>
+</body>
+</html>

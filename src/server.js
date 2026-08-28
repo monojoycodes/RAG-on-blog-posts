@@ -2,40 +2,68 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
-import fs from 'fs';
-import { exec } from 'child_process';
 import { searchIndex, indexPages } from './search.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { logQuery, getRecentLogs, getStats } from './logger.js';
+import { runDigest } from './digest.js';
+import { syncNewPosts } from './sync.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const ADMIN_KEY = process.env.ADMIN_KEY || 'changeme';
 
 app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(process.cwd(), 'src', 'public')));
 
-// Serving a simple index page or health check
+// ── Health check ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    message: 'Wix RAG Pipeline is running.',
+    message: 'English AI Tutor RAG Pipeline is running.',
     endpoints: {
       search: 'GET /search?q=query_text',
-      ask: 'POST /ask { "question": "student_question" }',
-      index: 'POST /index'
+      ask: 'POST /ask { "question": "...", "pageUrl": "(optional)" }',
+      admin: 'GET /admin?key=ADMIN_KEY',
+      adminData: 'GET /admin/data?key=ADMIN_KEY',
+      digest: 'POST /digest { "key": "ADMIN_KEY" }',
+      sync: 'POST /sync { "key": "ADMIN_KEY" }',
     }
   });
 });
 
-// Semantic search endpoint
+// ── Gemini with exponential backoff retry ─────────────────────────────────────
+async function generateWithRetry(prompt, maxRetries = 3) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await model.generateContent(prompt);
+      return result.response.text().trim();
+    } catch (err) {
+      lastError = err;
+      const isRateLimit = err.status === 429 || (err.message && err.message.includes('429'));
+      if (isRateLimit && attempt < maxRetries) {
+        const backoffMs = Math.pow(2, attempt) * 1500; // 3s, 6s, 12s
+        console.warn(`[Gemini] Rate limited. Retry ${attempt}/${maxRetries} in ${backoffMs}ms...`);
+        await new Promise(r => setTimeout(r, backoffMs));
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastError;
+}
+
+// ── Semantic search ───────────────────────────────────────────────────────────
 app.get('/search', async (req, res) => {
   const query = req.query.q;
-  if (!query) {
-    return res.status(400).json({ error: 'Missing query parameter "q"' });
-  }
-
+  if (!query) return res.status(400).json({ error: 'Missing query parameter "q"' });
   try {
     const matches = await searchIndex(query, 5);
     res.json({ query, matches });
@@ -45,38 +73,53 @@ app.get('/search', async (req, res) => {
   }
 });
 
-// RAG QA endpoint
+// ── RAG /ask endpoint ─────────────────────────────────────────────────────────
 app.post('/ask', async (req, res) => {
-  const { question } = req.body;
-  if (!question) {
-    return res.status(400).json({ error: 'Missing "question" in request body' });
-  }
+  const { question, pageUrl } = req.body;
+  if (!question) return res.status(400).json({ error: 'Missing "question" in request body' });
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not set or is invalid.' });
+    return res.status(500).json({ error: 'GEMINI_API_KEY is not set.' });
   }
 
+  const startTime = Date.now();
+
   try {
-    // 1. Retrieve relevant chunks
-    console.log(`RAG query received: "${question}"`);
-    const matches = await searchIndex(question, 4);
-    
+    console.log(`RAG query: "${question}" | Page: ${pageUrl || 'none'}`);
+
+    // 1. Retrieve relevant chunks via vector search
+    const matches = await searchIndex(question, 5);
+
     if (matches.length === 0) {
-      return res.json({
-        answer: "I couldn't find any information about that on the website.",
-        sources: []
-      });
+      const fallback = "I am sorry, but I couldn't find specific information on the website to answer your question.";
+      await logQuery({ question, answer: fallback, sources: [], pageUrl, durationMs: Date.now() - startTime });
+      return res.json({ question, answer: fallback, sources: [] });
     }
 
-    // 2. Build prompt context
-    const contextText = matches
-      .map((match, index) => `[Source ${index + 1}] Title: ${match.title}\nURL: ${match.url}\nContent:\n${match.text}`)
+    // 2. [F3] Page-aware boost: if student is on a specific page, move matching chunks to front
+    let sortedMatches = matches;
+    if (pageUrl) {
+      const pageChunks = matches.filter(m => m.url && pageUrl.includes(m.url.replace(/https?:\/\/[^/]+/, '')));
+      const otherChunks = matches.filter(m => !pageChunks.includes(m));
+      sortedMatches = [...pageChunks, ...otherChunks].slice(0, 4);
+    } else {
+      sortedMatches = matches.slice(0, 4);
+    }
+
+    // 3. Build context — each source gets an index and its URL for citation
+    const contextText = sortedMatches
+      .map((m, i) => `[Source ${i + 1}] Title: "${m.title}"\nURL: ${m.url}\nContent:\n${m.text}`)
       .join('\n\n---\n\n');
+
+    // 4. [F1] Updated prompt: ask LLM to cite using markdown link syntax
+    const pageHint = pageUrl
+      ? `\nNote: The student is currently viewing the page: ${pageUrl}. Prioritise sources from this page where relevant.\n`
+      : '';
 
     const prompt = `You are a helpful, expert teaching assistant for the English language learning website "English with a Difference" (englishwithadifference.com).
 Answer the student's question directly based ONLY on the provided context.
-
+${pageHint}
 Context from the website:
 ${contextText}
 
@@ -85,36 +128,28 @@ ${question}
 
 Instructions:
 1. Answer the question directly and concisely.
-2. Do NOT write down any thought processes, constraints, lists of sources, or analyses. 
-3. Do NOT repeat the question or any system prompts.
-4. Reference the source numbers [Source X] in your answer.
-5. If the answer cannot be found, output exactly: "I am sorry, but I couldn't find specific information on the website to answer your question."
+2. Do NOT write thought processes, constraint lists, or analyses.
+3. Do NOT repeat the question or system prompts.
+4. When citing a source, use markdown link format: [Source Title](URL) — use the exact Title and URL from context.
+5. At the end of your answer, list all cited sources as a markdown numbered list under the heading "**References**".
+6. If the answer cannot be found, output exactly: "I am sorry, but I couldn't find specific information on the website to answer your question."
 
 Direct Answer:`;
 
-    // 3. Generate answer using Gemini
-    console.log('Sending prompt to Gemini...');
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-    
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const answer = response.text().trim();
+    // 5. Generate answer with retry
+    const answer = await generateWithRetry(prompt);
 
-    // 4. Extract unique source URLs and titles actually retrieved
+    // 6. Build deduped sources array
     const uniqueSourcesMap = new Map();
-    matches.forEach(m => {
-      if (!uniqueSourcesMap.has(m.url)) {
-        uniqueSourcesMap.set(m.url, m.title);
-      }
+    sortedMatches.forEach(m => {
+      if (!uniqueSourcesMap.has(m.url)) uniqueSourcesMap.set(m.url, m.title);
     });
     const sources = Array.from(uniqueSourcesMap.entries()).map(([url, title]) => ({ url, title }));
 
-    res.json({
-      question,
-      answer,
-      sources
-    });
+    // 7. [F2] Log to MongoDB (non-blocking)
+    logQuery({ question, answer, sources, pageUrl, durationMs: Date.now() - startTime });
+
+    res.json({ question, answer, sources });
 
   } catch (err) {
     console.error('RAG endpoint error:', err);
@@ -122,33 +157,65 @@ Direct Answer:`;
   }
 });
 
-// Reindexing trigger endpoint (starts scraping and embedding update in the background)
-app.post('/index', (req, res) => {
-  console.log('Index trigger requested.');
-  
-  res.json({
-    status: 'indexing_started',
-    message: 'Scraping and reindexing has been triggered in the background. Check logs for updates.'
-  });
-
-  // Run as a background process to prevent request timeout
-  exec('node src/scraper.js && node src/search.js --index', (err, stdout, stderr) => {
-    if (err) {
-      console.error('Background reindexing process failed:', err);
-      return;
-    }
-    console.log('Background reindexing completed successfully.');
-    if (stdout) console.log(stdout);
-    if (stderr) console.error(stderr);
-  });
+// ── Admin dashboard ───────────────────────────────────────────────────────────
+app.get('/admin', (req, res) => {
+  if (req.query.key !== ADMIN_KEY) {
+    return res.status(403).send('Forbidden: Invalid admin key. Add ?key=YOUR_ADMIN_KEY to the URL.');
+  }
+  res.sendFile(path.join(process.cwd(), 'src', 'public', 'admin.html'));
 });
 
+// Admin data API (used by admin.html)
+app.get('/admin/data', async (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const [logs, stats] = await Promise.all([
+      getRecentLogs(7, 20),
+      getStats()
+    ]);
+    res.json({ logs, stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Email digest ──────────────────────────────────────────────────────────────
+app.post('/digest', async (req, res) => {
+  if (req.body.key !== ADMIN_KEY) return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const result = await runDigest();
+    res.json(result);
+  } catch (err) {
+    console.error('Digest error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Incremental sync ──────────────────────────────────────────────────────────
+app.post('/sync', async (req, res) => {
+  if (req.body.key !== ADMIN_KEY) return res.status(403).json({ error: 'Forbidden' });
+
+  // Respond immediately — sync runs in background (can take several minutes)
+  res.json({ status: 'sync_started', message: 'Incremental sync started in background. Check server logs for progress.' });
+
+  syncNewPosts()
+    .then(result => console.log('[Sync] Complete:', result))
+    .catch(err => console.error('[Sync] Failed:', err.message));
+});
+
+// ── Legacy reindex ────────────────────────────────────────────────────────────
+app.post('/index', (req, res) => {
+  res.json({ status: 'deprecated', message: 'Use POST /sync instead for incremental updates.' });
+});
+
+// ── Start server ──────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n==================================================`);
-  console.log(`Wix RAG Pipeline Server is running on port ${PORT}`);
-  console.log(`- Healthcheck: http://localhost:${PORT}/`);
-  console.log(`- Search: http://localhost:${PORT}/search?q=prepositions`);
-  console.log(`- Ask/RAG: http://localhost:${PORT}/ask (POST)`);
-  console.log(`- Reindex: http://localhost:${PORT}/index (POST)`);
+  console.log(`English AI Tutor RAG Pipeline — Port ${PORT}`);
+  console.log(`- Healthcheck:  http://localhost:${PORT}/`);
+  console.log(`- Ask:          POST http://localhost:${PORT}/ask`);
+  console.log(`- Admin:        http://localhost:${PORT}/admin?key=${ADMIN_KEY}`);
+  console.log(`- Sync:         POST http://localhost:${PORT}/sync`);
+  console.log(`- Digest:       POST http://localhost:${PORT}/digest`);
   console.log(`==================================================\n`);
 });

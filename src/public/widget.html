@@ -515,16 +515,23 @@
     messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + 'px';
   });
 
-  // Format text: bold and line breaks only
+  // Parse markdown: bold, [text](url) links, line breaks
   function formatText(text) {
     return text
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#7B1C1C;text-decoration:underline;font-weight:500;">$1</a>')
       .replace(/\n/g, '<br>');
   }
 
   function scrollToBottom() {
     messageList.scrollTo({ top: messageList.scrollHeight, behavior: 'smooth' });
+  }
+
+  // Strip LLM-generated "References" block from answer body (we render our own)
+  function cleanAnswerBody(text) {
+    return text.replace(/\*?\*?References\*?\*?[:\s]*([\s\S]*)$/i, '').trim();
   }
 
   function appendMessage(role, text, sources = null) {
@@ -540,22 +547,25 @@
 
     const bubble = document.createElement('div');
     bubble.className = 'message-content';
-    bubble.innerHTML = formatText(text);
+    const cleanBody = role === 'bot' ? cleanAnswerBody(text) : text;
+    bubble.innerHTML = formatText(cleanBody);
 
+    // Render sources as numbered reference pills
     if (sources && sources.length > 0) {
       const srcContainer = document.createElement('div');
       srcContainer.className = 'sources-container';
-      srcContainer.innerHTML = '<div class="sources-label">Read More</div>';
+      srcContainer.innerHTML = '<div class="sources-label">References</div>';
       const pills = document.createElement('div');
       pills.className = 'source-pills';
-      sources.forEach(src => {
+      sources.forEach((src, idx) => {
         const a = document.createElement('a');
         a.className = 'source-link';
         a.href = src.url;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         a.title = src.title;
-        a.textContent = src.title.split(' | ')[0].substring(0, 36) + (src.title.split(' | ')[0].length > 36 ? '…' : '');
+        const shortTitle = src.title.split(' | ')[0].substring(0, 30);
+        a.textContent = `[${idx + 1}] ${shortTitle}${shortTitle.length >= 30 ? '…' : ''}`;
         pills.appendChild(a);
       });
       srcContainer.appendChild(pills);
@@ -602,10 +612,14 @@
     showTyping();
 
     try {
+      // Try to read parent page URL for page-aware answers (works when embedded in Wix iframe)
+      let pageUrl = null;
+      try { pageUrl = window.parent.location.href; } catch (_) {}
+
       const res = await fetch(`${BACKEND_URL}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, pageUrl }),
       });
       const data = await res.json();
       removeTyping();
