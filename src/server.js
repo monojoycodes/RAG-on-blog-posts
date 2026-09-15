@@ -382,6 +382,8 @@ Overall Stats:
 - Total fallbacks/unanswered (7d): ${stats.fallbackCount}
 - Top questions asked:
 ${stats.topQuestions.map((q, i) => `  ${i + 1}. "${q._id}" (${q.count}x)`).join('\n')}
+- Top pages generating student inquiries:
+${(stats.topPages || []).slice(0, 6).map((p, i) => `  ${i + 1}. ${p._id} (${p.count} queries)`).join('\n')}
 
 Log of student queries:
 ${sampleQueries}

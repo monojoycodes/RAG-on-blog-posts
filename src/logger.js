@@ -79,8 +79,9 @@ export async function getStats() {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    const [totalToday, totalWeek, totalAll, fallbackCount, topQuestions] = await Promise.all([
+    const [totalToday, totalWeek, totalAll, fallbackCount, topQuestions, topPages, dailyTrends] = await Promise.all([
       col.countDocuments({ timestamp: { $gte: todayStart } }),
       col.countDocuments({ timestamp: { $gte: weekStart } }),
       col.countDocuments({}),
@@ -90,12 +91,29 @@ export async function getStats() {
         { $group: { _id: '$question', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 10 }
+      ]).toArray(),
+      col.aggregate([
+        { $match: { timestamp: { $gte: thirtyDaysAgo }, pageUrl: { $ne: null } } },
+        { $group: { _id: '$pageUrl', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 15 }
+      ]).toArray(),
+      col.aggregate([
+        { $match: { timestamp: { $gte: thirtyDaysAgo } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+            count: { $sum: 1 },
+            fallbacks: { $sum: { $cond: ['$isFallback', 1, 0] } }
+          }
+        },
+        { $sort: { _id: 1 } }
       ]).toArray()
     ]);
 
-    return { totalToday, totalWeek, totalAll, fallbackCount, topQuestions };
+    return { totalToday, totalWeek, totalAll, fallbackCount, topQuestions, topPages, dailyTrends };
   } catch (err) {
     console.error('[Logger] Failed to get stats:', err.message);
-    return { totalToday: 0, totalWeek: 0, totalAll: 0, fallbackCount: 0, topQuestions: [] };
+    return { totalToday: 0, totalWeek: 0, totalAll: 0, fallbackCount: 0, topQuestions: [], topPages: [], dailyTrends: [] };
   }
 }

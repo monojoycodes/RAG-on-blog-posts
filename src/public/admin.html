@@ -119,6 +119,32 @@
     .query-meta a { color: var(--maroon); text-decoration: none; }
     .fallback-tag { color: var(--red); font-weight: 700; }
 
+    /* Activity Trends Chart */
+    .trend-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .trend-metric-card { background: var(--cream); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; text-align: center; }
+    .trend-metric-card .val { font-size: 22px; font-weight: 700; color: var(--maroon); line-height: 1.1; }
+    .trend-metric-card .lbl { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 4px; }
+
+    .chart-wrapper { background: #fdfaf6; border: 1px solid var(--border); border-radius: 8px; padding: 18px 14px 10px 14px; }
+    .chart-bars-container { display: flex; align-items: flex-end; gap: 10px; height: 140px; padding: 10px 4px 4px 4px; overflow-x: auto; border-bottom: 2px solid var(--border); }
+    .chart-col { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 36px; height: 100%; justify-content: flex-end; position: relative; cursor: pointer; }
+    .chart-bar-fill { width: 22px; background: linear-gradient(180deg, var(--gold), var(--maroon)); border-radius: 4px 4px 0 0; transition: all 0.2s ease; min-height: 4px; }
+    .chart-col:hover .chart-bar-fill { background: var(--maroon); filter: brightness(1.2); transform: scaleY(1.04); }
+    .chart-val { font-size: 10px; font-weight: 700; color: var(--maroon); margin-bottom: 3px; }
+    .chart-date-lbl { font-size: 10px; color: #777; margin-top: 6px; white-space: nowrap; text-align: center; }
+
+    /* Top Pages */
+    .page-title-cell { display: flex; flex-direction: column; gap: 3px; }
+    .page-title-name { font-weight: 700; color: var(--maroon); font-size: 13.5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .page-url-link { font-size: 11.5px; color: #888; text-decoration: none; word-break: break-all; }
+    .page-url-link:hover { color: var(--maroon); text-decoration: underline; }
+    .progress-track { background: #f0e6d9; border-radius: 10px; height: 8px; width: 100%; overflow: hidden; margin-top: 4px; }
+    .progress-fill { background: linear-gradient(90deg, var(--maroon), var(--gold)); height: 100%; border-radius: 10px; }
+    .page-tag { display: inline-block; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 7px; border-radius: 4px; background: #eef2ff; color: #4338ca; }
+    .page-tag.poem { background: #fdf2f8; color: #be185d; }
+    .page-tag.grammar { background: #ecfdf5; color: #047857; }
+    .page-tag.home { background: #fefce8; color: #a16207; }
+
     .status-msg { text-align: center; padding: 40px; color: #999; font-style: italic; }
     .toast { position: fixed; bottom: 24px; right: 24px; background: #1a1a1a; color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px; display: none; z-index: 9999; }
 
@@ -162,6 +188,52 @@
     <div class="stat-card"><div class="value" id="stat-all">—</div><div class="label">Total All Time</div></div>
     <div class="stat-card warn"><div class="value" id="stat-fallback">—</div><div class="label">Unanswered (7d)</div></div>
   </div>
+
+  <!-- Activity Trends (Last 30 Days) -->
+  <section id="trends-section">
+    <header>
+      <h2>📈 Activity Trends (Daily Query Volume)</h2>
+      <span id="trend-summary-text" style="font-size:12px;color:#777;">Interactive 30-day activity tracking</span>
+    </header>
+    <div class="section-body">
+      <div class="trend-metrics" id="trend-metrics-grid">
+        <div class="trend-metric-card"><div class="val" id="trend-active-days">—</div><div class="lbl">Active Days</div></div>
+        <div class="trend-metric-card"><div class="val" id="trend-avg-queries">—</div><div class="lbl">Avg Queries / Day</div></div>
+        <div class="trend-metric-card"><div class="val" id="trend-peak-day">—</div><div class="lbl">Peak Day</div></div>
+        <div class="trend-metric-card"><div class="val" id="trend-peak-count">—</div><div class="lbl">Peak Daily Volume</div></div>
+      </div>
+      <div class="chart-wrapper">
+        <div class="chart-bars-container" id="chart-bars-container">
+          <div class="status-msg">Loading activity trends…</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Top Pages Generating Student Inquiries -->
+  <section id="top-pages-section">
+    <header>
+      <h2>📍 Top Pages Generating Student Inquiries</h2>
+      <span style="font-size:12px;color:#777;">Where students ask questions on englishwithadifference.com</span>
+    </header>
+    <div class="section-body">
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:40px;">#</th>
+              <th>Lesson / Page Topic</th>
+              <th style="width:160px;">Share of Questions</th>
+              <th style="width:110px;text-align:right;">Total Inquiries</th>
+            </tr>
+          </thead>
+          <tbody id="top-pages-body">
+            <tr><td colspan="4" class="status-msg">Loading top pages…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 
   <!-- AI Insights & Site Excellence Recommendations -->
   <section id="ai-section">
@@ -230,6 +302,43 @@
     t.textContent = msg;
     t.style.display = 'block';
     setTimeout(() => { t.style.display = 'none'; }, duration);
+  }
+
+  function formatDateShort(dateStr) {
+    if (!dateStr) return '—';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const m = parseInt(parts[1], 10) - 1;
+      return `${months[m]} ${parseInt(parts[2], 10)}`;
+    }
+    return dateStr;
+  }
+
+  function formatPageInfo(url) {
+    if (!url) return { name: 'Direct / Unknown Context', tag: 'Direct', url: '' };
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname;
+      if (path === '/' || path === '') return { name: 'Website Homepage', tag: 'Home', url };
+
+      const slug = path.split('/').filter(Boolean).pop() || 'Homepage';
+
+      let tag = 'Post';
+      if (/poem|amanda|try-again|dust-of-snow|fire-and-ice|custard/i.test(slug)) tag = 'Poem';
+      else if (/grammar|speech|tenses|clauses|voice/i.test(slug)) tag = 'Grammar';
+      else if (/class-?10|class10/i.test(slug)) tag = 'Class 10';
+      else if (/class-?12|class12|flamingo|vistas/i.test(slug)) tag = 'Class 12';
+      else if (/worksheet|cbq|cbe|competency/i.test(slug)) tag = 'Worksheet';
+
+      const name = slug
+        .replace(/[-_]/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+
+      return { name, tag, url };
+    } catch (_) {
+      return { name: url, tag: 'Page', url };
+    }
   }
 
   function renderMarkdown(md) {
@@ -350,7 +459,76 @@
       document.getElementById('stat-all').textContent = data.stats.totalAll;
       document.getElementById('stat-fallback').textContent = data.stats.fallbackCount;
 
-      // Top questions
+      // 1. Render Activity Trends (Daily Query Volume)
+      const trends = data.stats.dailyTrends || [];
+      const chartContainer = document.getElementById('chart-bars-container');
+      if (trends.length === 0) {
+        chartContainer.innerHTML = '<div class="status-msg">No activity trend data available yet.</div>';
+      } else {
+        const totalTrendQueries = trends.reduce((sum, d) => sum + d.count, 0);
+        const activeDays = trends.length;
+        const avgQueries = activeDays ? (totalTrendQueries / activeDays).toFixed(1) : 0;
+        const peakDay = trends.reduce((max, d) => d.count > max.count ? d : max, { _id: '—', count: 0 });
+
+        document.getElementById('trend-active-days').textContent = activeDays;
+        document.getElementById('trend-avg-queries').textContent = avgQueries;
+        document.getElementById('trend-peak-day').textContent = formatDateShort(peakDay._id);
+        document.getElementById('trend-peak-count').textContent = peakDay.count + ' queries';
+
+        const maxCount = Math.max(...trends.map(d => d.count), 1);
+        chartContainer.innerHTML = trends.map(d => {
+          const heightPct = Math.max(Math.round((d.count / maxCount) * 100), 6);
+          const dateLabel = formatDateShort(d._id);
+          return `
+            <div class="chart-col" title="${d._id}: ${d.count} inquiries (${d.fallbacks || 0} unanswered)">
+              <div class="chart-val">${d.count}</div>
+              <div class="chart-bar-fill" style="height:${heightPct}%;"></div>
+              <div class="chart-date-lbl">${dateLabel}</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 2. Render Top Pages Generating Student Inquiries
+      const topPages = data.stats.topPages || [];
+      const topPagesBody = document.getElementById('top-pages-body');
+      if (topPages.length === 0) {
+        topPagesBody.innerHTML = '<tr><td colspan="4" class="status-msg">No page tracking data recorded yet.</td></tr>';
+      } else {
+        const totalPageInquiries = topPages.reduce((sum, p) => sum + p.count, 0);
+        topPagesBody.innerHTML = topPages.map((p, i) => {
+          const info = formatPageInfo(p._id);
+          const pct = totalPageInquiries ? Math.round((p.count / totalPageInquiries) * 100) : 0;
+          const tagClass = info.tag.toLowerCase().replace(/\s+/g, '');
+          return `
+            <tr>
+              <td><strong>${i + 1}</strong></td>
+              <td>
+                <div class="page-title-cell">
+                  <div class="page-title-name">
+                    <span class="page-tag ${tagClass}">${info.tag}</span>
+                    <span>${escHtml(info.name)}</span>
+                  </div>
+                  ${info.url ? `<a href="${escHtml(info.url)}" class="page-url-link" target="_blank" rel="noopener noreferrer">🔗 ${escHtml(info.url)}</a>` : ''}
+                </div>
+              </td>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:12px;font-weight:700;color:var(--maroon);min-width:32px;">${pct}%</span>
+                  <div class="progress-track" style="flex:1;">
+                    <div class="progress-fill" style="width:${pct}%;"></div>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align:right;">
+                <span class="count-badge">${p.count}×</span>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // 3. Top questions
       const tbody = document.getElementById('top-questions-body');
       if (data.stats.topQuestions.length === 0) {
         tbody.innerHTML = '<tr><td colspan="3" class="status-msg">No data yet.</td></tr>';
@@ -364,7 +542,7 @@
         `).join('');
       }
 
-      // Recent query feed
+      // 4. Recent query feed
       const feed = document.getElementById('query-feed');
       if (data.logs.length === 0) {
         feed.innerHTML = '<div class="status-msg">No queries logged yet.</div>';
