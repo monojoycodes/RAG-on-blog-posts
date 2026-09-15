@@ -111,8 +111,15 @@ async function sendEmail(subject, htmlBody) {
   // Automatically strip all spaces to ensure 100% reliable SMTP authentication.
   const pass = rawPass.replace(/\s+/g, '');
 
+  // Use explicit SMTP host with IPv4 forced to avoid Docker/Cloud IPv6 hanging
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // STARTTLS
+    family: 4,     // Force IPv4 to prevent cloud timeout
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
     auth: { user: sender, pass }
   });
 

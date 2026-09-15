@@ -579,22 +579,29 @@
   }
 
   async function triggerDigest() {
-    showToast('Sending digest email… this may take 30 seconds.');
+    showToast('Sending digest email… please wait a moment.');
     try {
       const res = await fetch(`${API}/digest`, {
         method: 'POST',
         headers: getAuthHeaders()
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        throw new Error(res.ok ? 'Unexpected response format' : `Server error (HTTP ${res.status})`);
+      }
+
       if (data.success) {
-        showToast(`✅ Digest sent! Analysed ${data.queriesAnalysed} queries.`, 5000);
+        showToast(`✅ Digest sent! Analysed ${data.queriesAnalysed} queries.`, 6000);
       } else if (data.skipped) {
-        showToast('ℹ No queries in the last 7 days — digest skipped.', 4000);
+        showToast(`ℹ ${data.reason || 'No queries in the last 7 days — digest skipped.'}`, 5000);
       } else {
-        showToast('❌ Error: ' + (data.error || 'Unknown error'));
+        showToast('❌ ' + (data.error || 'Unknown error'), 6000);
       }
     } catch (err) {
-      showToast('❌ Failed to send digest: ' + err.message);
+      showToast('❌ Failed to send digest: ' + err.message, 6000);
     }
   }
 
