@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { searchIndex, indexPages, getChunksByUrl } from './search.js';
 import { logQuery, getRecentLogs, getStats } from './logger.js';
-import { runDigest } from './digest.js';
+import { runDigest, checkAndTriggerWeeklyDigest } from './digest.js';
 import { syncNewPosts } from './sync.js';
 
 dotenv.config();
@@ -69,6 +69,8 @@ async function generateWithGroq(prompt) {
         const cleanedContent = content
           .replace(/<think>[\s\S]*?<\/think>/gi, '')
           .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+          .replace(/<think>[\s\S]*/gi, '')
+          .replace(/<reasoning>[\s\S]*/gi, '')
           .trim();
         if (cleanedContent) return cleanedContent;
       }
@@ -271,6 +273,9 @@ Direct Answer:`;
 
     // 7. Log to MongoDB (non-blocking)
     logQuery({ question, answer, sources, pageUrl, durationMs: Date.now() - startTime });
+
+    // 8. Opportunistic auto-trigger for weekly email digest (runs in background if >= 7 days passed)
+    checkAndTriggerWeeklyDigest().catch(e => console.warn('[Digest] Background check failed:', e.message));
 
     res.json({ question, answer, sources });
 

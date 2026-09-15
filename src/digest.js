@@ -19,7 +19,7 @@
  */
 
 import nodemailer from 'nodemailer';
-import { getRecentLogs, getStats } from './logger.js';
+import { getRecentLogs, getStats, getLogDatabase } from './logger.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -80,6 +80,8 @@ Keep the report concise, data-driven, and actionable. Format in clean HTML for e
           return content
             .replace(/<think>[\s\S]*?<\/think>/gi, '')
             .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+            .replace(/<think>[\s\S]*/gi, '')
+            .replace(/<reasoning>[\s\S]*/gi, '')
             .replace(/^```html/gi, '')
             .replace(/```$/gi, '')
             .trim();
@@ -110,28 +112,34 @@ async function sendEmail(subject, htmlBody) {
     auth: { user: sender, pass }
   });
 
-  await transporter.sendMail({
-    from: `"English AI Tutor Analytics" <${sender}>`,
-    to: recipients,
-    subject,
-    html: `
-      <div style="font-family: Georgia, serif; max-width: 680px; margin: 0 auto; color: #1a1a1a;">
-        <div style="background: linear-gradient(135deg, #7B1C1C, #5a1414); padding: 24px; border-radius: 8px 8px 0 0;">
-          <h1 style="color: white; margin: 0; font-size: 22px;">✦ English AI Tutor — Weekly Insights</h1>
-          <p style="color: rgba(255,255,255,0.7); margin: 6px 0 0; font-size: 13px;">englishwithadifference.com · Automated Analytics Report</p>
+  try {
+    await transporter.sendMail({
+      from: `"English AI Tutor Analytics" <${sender}>`,
+      to: recipients,
+      subject,
+      html: `
+        <div style="font-family: Georgia, serif; max-width: 680px; margin: 0 auto; color: #1a1a1a;">
+          <div style="background: linear-gradient(135deg, #7B1C1C, #5a1414); padding: 24px; border-radius: 8px 8px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 22px;">✦ English AI Tutor — Weekly Insights</h1>
+            <p style="color: rgba(255,255,255,0.7); margin: 6px 0 0; font-size: 13px;">englishwithadifference.com · Automated Analytics Report</p>
+          </div>
+          <div style="background: #fdf6ee; padding: 24px; border: 1px solid #e4d5c5; border-top: none; border-radius: 0 0 8px 8px;">
+            ${htmlBody}
+          </div>
+          <p style="text-align: center; color: #888; font-size: 11px; margin-top: 16px;">
+            This report was generated automatically by your RAG chatbot pipeline.<br>
+            Sent from ${sender} to ${recipients}.
+          </p>
         </div>
-        <div style="background: #fdf6ee; padding: 24px; border: 1px solid #e4d5c5; border-top: none; border-radius: 0 0 8px 8px;">
-          ${htmlBody}
-        </div>
-        <p style="text-align: center; color: #888; font-size: 11px; margin-top: 16px;">
-          This report was generated automatically by your RAG chatbot pipeline.<br>
-          Sent from monojoycodes@gmail.com to ${recipients}.
-        </p>
-      </div>
-    `
-  });
-
-  console.log(`[Digest] Email sent to: ${recipients}`);
+      `
+    });
+    console.log(`[Digest] Email sent to: ${recipients}`);
+  } catch (err) {
+    if (err.responseCode === 535 || err.code === 'EAUTH' || (err.message && err.message.includes('535'))) {
+      throw new Error(`Gmail SMTP authentication failed (535 Bad Credentials). The App Password for ${sender} is invalid or expired. Please generate a fresh 16-character App Password at https://myaccount.google.com/apppasswords and update GMAIL_APP_PASSWORD.`);
+    }
+    throw err;
+  }
 }
 
 /**
@@ -156,10 +164,58 @@ export async function runDigest() {
   const subject = `✦ English AI Tutor Weekly Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
   await sendEmail(subject, summary);
 
+  // Record successful digest time in MongoDB so auto-scheduler knows when it last sent
+  try {
+    const db = await getLogDatabase();
+    await db.collection('system_state').updateOne(
+      { _id: 'weekly_digest' },
+      { $set: { lastSentAt: new Date(), lastAnalysedCount: logs.length } },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.warn('[Digest] Failed to record state in MongoDB:', err.message);
+  }
+
   return {
     success: true,
     queriesAnalysed: logs.length,
     stats
   };
 }
+
+/**
+ * Opportunistic auto-trigger: checks if >= 7 days have passed since last digest.
+ * Runs in the background on inbound site activity so no external cron is mandatory.
+ */
+let isDigestRunning = false;
+
+export async function checkAndTriggerWeeklyDigest() {
+  if (isDigestRunning) return;
+  try {
+    const db = await getLogDatabase();
+    const state = await db.collection('system_state').findOne({ _id: 'weekly_digest' });
+    const lastSent = state?.lastSentAt ? new Date(state.lastSentAt).getTime() : 0;
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+    if (Date.now() - lastSent >= sevenDaysMs) {
+      isDigestRunning = true;
+      console.log('[Digest] 7 days have elapsed since last digest. Running automated weekly digest in background...');
+      runDigest()
+        .then(res => {
+          if (res?.success) console.log(`[Digest] Automated weekly digest completed successfully (${res.queriesAnalysed} queries analysed).`);
+          else if (res?.skipped) console.log(`[Digest] Automated weekly digest skipped (${res.reason}).`);
+        })
+        .catch(err => {
+          console.error('[Digest] Automated weekly digest error:', err.message);
+        })
+        .finally(() => {
+          isDigestRunning = false;
+        });
+    }
+  } catch (err) {
+    console.warn('[Digest] checkAndTriggerWeeklyDigest check failed:', err.message);
+    isDigestRunning = false;
+  }
+}
+
 

@@ -4,17 +4,28 @@
  */
 
 import { MongoClient } from 'mongodb';
+import dns from 'dns';
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Ensure SRV DNS records resolve reliably across all networks
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (_) {}
+
 let logClient = null;
 
-async function getLogCollection() {
+export async function getLogDatabase() {
   if (!logClient) {
     logClient = new MongoClient(process.env.MONGODB_URI);
     await logClient.connect();
   }
-  return logClient.db('wix_rag_pipeline').collection('query_logs');
+  return logClient.db('wix_rag_pipeline');
+}
+
+async function getLogCollection() {
+  const db = await getLogDatabase();
+  return db.collection('query_logs');
 }
 
 /**

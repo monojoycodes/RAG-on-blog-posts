@@ -6,11 +6,12 @@
   <title>AI Tutor — Admin Intelligence Portal</title>
   <style>
     :root {
-      --green: #005C3B;
-      --green-dark: #00422A;
-      --gold: #F5C518;
-      --cream: #F6F0E6;
-      --border: #DDF2E6;
+      --maroon: #7B1C1C;
+      --maroon-dark: #5a1414;
+      --gold: #c8962c;
+      --cream: #fdf6ee;
+      --border: #e4d5c5;
+      --green: #16a34a;
       --red: #dc2626;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -26,25 +27,25 @@
       padding: 32px 28px; width: 100%; max-width: 400px; text-align: center;
       box-shadow: 0 12px 40px rgba(0,0,0,0.25);
     }
-    .login-card h2 { color: var(--green); font-size: 20px; margin-bottom: 6px; }
+    .login-card h2 { color: var(--maroon); font-size: 20px; margin-bottom: 6px; }
     .login-card p { font-size: 13px; color: #666; margin-bottom: 20px; font-style: italic; }
     .login-input {
       width: 100%; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 8px;
       font-size: 15px; outline: none; margin-bottom: 16px; font-family: Arial, sans-serif;
       text-align: center; letter-spacing: 0.1em;
     }
-    .login-input:focus { border-color: var(--green); }
+    .login-input:focus { border-color: var(--maroon); }
     .login-btn {
-      width: 100%; padding: 12px; border-radius: 8px; background: var(--green);
+      width: 100%; padding: 12px; border-radius: 8px; background: var(--maroon);
       color: white; border: none; font-size: 15px; font-weight: 700; cursor: pointer;
       transition: background 0.2s; font-family: Georgia, serif;
     }
-    .login-btn:hover { background: var(--green-dark); }
+    .login-btn:hover { background: var(--maroon-dark); }
     .login-err { color: var(--red); font-size: 12px; margin-top: 12px; min-height: 18px; }
 
     /* === HEADER === */
     header {
-      background: linear-gradient(135deg, var(--green), var(--green-dark));
+      background: linear-gradient(135deg, var(--maroon), var(--maroon-dark));
       padding: 20px 32px; display: flex; align-items: center; justify-content: space-between;
     }
     header h1 { color: white; font-size: 20px; }
@@ -93,9 +94,18 @@
     .ai-box strong { color: #111; }
 
     /* Tables */
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; padding: 6px 10px; border-bottom: 1px solid var(--border); }
-    td { padding: 10px 10px; border-bottom: 1px solid #f3e9da; vertical-align: top; }
+    .table-responsive {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 10px 0;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 480px; }
+    th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--maroon); background: #fdf6ee; padding: 10px 12px; border-bottom: 2px solid var(--border); font-weight: 700; white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f3e9da; vertical-align: top; font-size: 13.5px; }
+    tr:nth-child(even) td { background: #faf6f0; }
     tr:last-child td { border-bottom: none; }
     .count-badge { display: inline-block; background: var(--maroon); color: white; border-radius: 20px; padding: 2px 9px; font-size: 12px; }
 
@@ -170,12 +180,14 @@
   <section>
     <header><h2>🏆 Top Questions This Week</h2></header>
     <div class="section-body">
-      <table>
-        <thead><tr><th>#</th><th>Question</th><th>Times Asked</th></tr></thead>
-        <tbody id="top-questions-body">
-          <tr><td colspan="3" class="status-msg">Loading...</td></tr>
-        </tbody>
-      </table>
+      <div class="table-responsive">
+        <table>
+          <thead><tr><th>#</th><th>Question</th><th>Times Asked</th></tr></thead>
+          <tbody id="top-questions-body">
+            <tr><td colspan="3" class="status-msg">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -221,7 +233,49 @@
   }
 
   function renderMarkdown(md) {
-    return md
+    if (!md) return '';
+    let html = md;
+
+    // Parse Markdown Tables
+    html = html.replace(/(?:(?:^|\n)[ \t]*\|.*\|[ \t]*)+/g, (match) => {
+      const lines = match.trim().split(/\r?\n/).map(l => l.trim()).filter(l => l.includes('|'));
+      if (lines.length < 2) return match;
+
+      let tableHtml = '<div class="table-responsive"><table>';
+      let isHeader = true;
+
+      lines.forEach((line) => {
+        if (/^\|?\s*[:\-\s|]+\s*\|?$/.test(line) && line.includes('-')) {
+          isHeader = false;
+          return;
+        }
+
+        let cleaned = line;
+        if (cleaned.startsWith('|')) cleaned = cleaned.substring(1);
+        if (cleaned.endsWith('|')) cleaned = cleaned.substring(0, cleaned.length - 1);
+
+        const cells = cleaned.split('|').map(c => c.trim());
+
+        if (isHeader) {
+          tableHtml += '<thead><tr>' +
+            cells.map(c => `<th>${c}</th>`).join('') +
+            '</tr></thead><tbody>';
+          isHeader = false;
+        } else {
+          tableHtml += '<tr>' +
+            cells.map(c => `<td>${c}</td>`).join('') +
+            '</tr>';
+        }
+      });
+
+      if (tableHtml.includes('<tbody>')) {
+        tableHtml += '</tbody>';
+      }
+      tableHtml += '</table></div>';
+      return tableHtml;
+    });
+
+    return html
       .replace(/^### (.*$)/gim, '<h3>$1</h3>')
       .replace(/^## (.*$)/gim, '<h3>$1</h3>')
       .replace(/^# (.*$)/gim, '<h3>$1</h3>')
