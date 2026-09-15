@@ -324,21 +324,23 @@ app.get('/admin', (req, res) => {
 
 // Admin Passcode Login API
 app.post('/admin/login', (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const ip = (req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown').trim();
+  const inputPasscode = (req.body?.passcode || '').trim();
 
-  if (isIpLocked(ip)) {
-    return res.status(429).json({ error: 'Too many failed login attempts. IP locked for 15 minutes.' });
-  }
-
-  const { passcode } = req.body;
-  if (passcode === ADMIN_KEY) {
+  // Allow instant login if passcode matches (case-insensitive & trimmed)
+  if (inputPasscode.toLowerCase() === ADMIN_KEY.toLowerCase()) {
     loginAttempts.delete(ip); // reset attempts on success
     return res.json({ success: true, token: ADMIN_KEY });
-  } else {
-    recordFailedLogin(ip);
-    const remaining = 5 - (loginAttempts.get(ip)?.count || 0);
-    return res.status(401).json({ error: `Invalid admin passcode. ${remaining} attempt(s) remaining.` });
   }
+
+  // If wrong passcode, check if IP is locked
+  if (isIpLocked(ip)) {
+    return res.status(429).json({ error: 'Too many failed login attempts. Please wait a few minutes before trying again.' });
+  }
+
+  recordFailedLogin(ip);
+  const remaining = Math.max(0, 5 - (loginAttempts.get(ip)?.count || 0));
+  return res.status(401).json({ error: `Invalid admin passcode. ${remaining} attempt(s) remaining.` });
 });
 
 // Admin data API (used by admin.html)

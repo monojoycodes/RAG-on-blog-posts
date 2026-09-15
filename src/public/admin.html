@@ -160,8 +160,7 @@
 <div id="login-overlay">
   <div class="login-card">
     <h2>✦ Admin Portal Login</h2>
-    <p>englishwithadifference.com</p>
-    <input type="password" id="passcode-input" class="login-input" placeholder="Enter Admin Passcode" autocomplete="current-password" autofocus />
+    <input type="password" id="passcode-input" class="login-input" placeholder="Enter Admin Passcode" autocomplete="current-password" autofocus onkeydown="if(event.key==='Enter') submitLogin()" />
     <button class="login-btn" onclick="submitLogin()">Unlock Dashboard</button>
     <div id="login-err" class="login-err"></div>
   </div>
