@@ -20,6 +20,7 @@
 
 import nodemailer from 'nodemailer';
 import dns from 'dns';
+import dnsPromises from 'dns/promises';
 import { getRecentLogs, getStats, getLogDatabase } from './logger.js';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -27,7 +28,18 @@ dotenv.config();
 // Ensure all outbound network connections prefer IPv4 (fixes Render/Docker IPv6 ENETUNREACH)
 try {
   dns.setDefaultResultOrder('ipv4first');
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
 } catch (_) {}
+
+async function getGmailSmtpHost() {
+  try {
+    const ips = await dnsPromises.resolve4('smtp.gmail.com');
+    if (ips && ips.length > 0) return ips[0];
+  } catch (err) {
+    console.warn('[Digest] IPv4 resolve warning:', err.message);
+  }
+  return 'smtp.gmail.com';
+}
 
 /**
  * Generate a Groq-powered digest summary from recent query logs.
@@ -117,16 +129,17 @@ async function sendEmail(subject, htmlBody) {
   // Automatically strip all spaces to ensure 100% reliable SMTP authentication.
   const pass = rawPass.replace(/\s+/g, '');
 
-  // Use explicit SMTP host with IPv4 forced to avoid Docker/Cloud IPv6 hanging
+  // Resolve direct IPv4 host and use TLS servername to strictly avoid IPv6 ENETUNREACH on Render
+  const smtpHost = await getGmailSmtpHost();
   const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
+    host: smtpHost,
     port: 587,
     secure: false, // STARTTLS
     connectionTimeout: 15000,
     greetingTimeout: 10000,
     socketTimeout: 20000,
-    lookup: (hostname, options, callback) => {
-      dns.lookup(hostname, { family: 4 }, callback);
+    tls: {
+      servername: 'smtp.gmail.com'
     },
     auth: { user: sender, pass }
   });
