@@ -19,9 +19,15 @@
  */
 
 import nodemailer from 'nodemailer';
+import dns from 'dns';
 import { getRecentLogs, getStats, getLogDatabase } from './logger.js';
 import dotenv from 'dotenv';
 dotenv.config();
+
+// Ensure all outbound network connections prefer IPv4 (fixes Render/Docker IPv6 ENETUNREACH)
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (_) {}
 
 /**
  * Generate a Groq-powered digest summary from recent query logs.
@@ -116,10 +122,12 @@ async function sendEmail(subject, htmlBody) {
     host: 'smtp.gmail.com',
     port: 587,
     secure: false, // STARTTLS
-    family: 4,     // Force IPv4 to prevent cloud timeout
     connectionTimeout: 15000,
     greetingTimeout: 10000,
     socketTimeout: 20000,
+    lookup: (hostname, options, callback) => {
+      dns.lookup(hostname, { family: 4 }, callback);
+    },
     auth: { user: sender, pass }
   });
 
