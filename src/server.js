@@ -450,7 +450,7 @@ app.post('/index', (req, res) => {
 });
 
 // ── Start server ──────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n==================================================`);
   console.log(`English AI Tutor RAG Pipeline — Port ${PORT}`);
   console.log(`- Healthcheck:  http://localhost:${PORT}/`);
