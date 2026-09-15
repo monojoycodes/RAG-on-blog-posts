@@ -17,18 +17,20 @@ app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(process.cwd(), 'src', 'public')));
 
-// ── Health check ─────────────────────────────────────────────────────────────
-app.get('/', (req, res) => {
+// ── Health check (also used for keep-alive pings) ────────────────────────────
+app.get(['/', '/health'], (req, res) => {
   res.json({
     status: 'ok',
+    uptime: Math.round(process.uptime()),
     message: 'English AI Tutor RAG Pipeline is running (Powered by Groq).',
     endpoints: {
+      health: 'GET /health',
       search: 'GET /search?q=query_text',
       ask: 'POST /ask { "question": "...", "pageUrl": "(optional)" }',
       admin: 'GET /admin',
       adminData: 'GET /admin/data',
-      digest: 'POST /digest',
-      sync: 'POST /sync',
+      digest: 'GET or POST /digest?key=ewd-admin-2024',
+      sync: 'GET or POST /sync?key=ewd-admin-2024',
     }
   });
 });
@@ -413,8 +415,9 @@ Use clear formatting, bold key terms, and bullet points. Make it insightful and 
   }
 });
 
-// ── Email digest ──────────────────────────────────────────────────────────────
-app.post('/digest', async (req, res) => {
+// ── Email digest (Accepts both GET and POST for cron compatibility) ───────────
+app.all('/digest', async (req, res) => {
+  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
   if (!authenticateAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
   try {
     const result = await runDigest();
@@ -425,8 +428,9 @@ app.post('/digest', async (req, res) => {
   }
 });
 
-// ── Incremental sync ──────────────────────────────────────────────────────────
-app.post('/sync', async (req, res) => {
+// ── Incremental sync (Accepts both GET and POST for cron compatibility) ───────
+app.all('/sync', async (req, res) => {
+  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
   if (!authenticateAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
 
   // Respond immediately — sync runs in background (can take several minutes)
