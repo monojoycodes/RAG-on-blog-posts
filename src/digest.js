@@ -99,13 +99,17 @@ Keep the report concise, data-driven, and actionable. Format in clean HTML for e
  * Send the digest email using Gmail SMTP.
  */
 async function sendEmail(subject, htmlBody) {
-  const pass = process.env.GMAIL_APP_PASSWORD;
+  const rawPass = process.env.GMAIL_APP_PASSWORD;
   const sender = 'monojoycodes@gmail.com';
   const recipients = 'himonotosh@gmail.com, monojoydey9@gmail.com';
 
-  if (!pass) {
+  if (!rawPass) {
     throw new Error('GMAIL_APP_PASSWORD is missing in Render environment variables. Please add GMAIL_APP_PASSWORD in Render Dashboard -> Environment.');
   }
+
+  // Google generates App Passwords with spaces for readability (e.g. "abcd efgh ijkl mnop").
+  // Automatically strip all spaces to ensure 100% reliable SMTP authentication.
+  const pass = rawPass.replace(/\s+/g, '');
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
