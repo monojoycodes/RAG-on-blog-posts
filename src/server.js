@@ -421,13 +421,13 @@ Use clear formatting, bold key terms, and bullet points. Make it insightful and 
 app.all('/digest', async (req, res) => {
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
   if (!authenticateAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
-  try {
-    const result = await runDigest();
-    res.json(result);
-  } catch (err) {
-    console.error('Digest error:', err);
-    res.status(500).json({ error: err.message });
-  }
+
+  // Respond immediately — digest generation and email delivery runs in background to prevent cron timeouts
+  res.json({ status: 'digest_started', message: 'Weekly digest generation started in background. Check server logs for progress.' });
+
+  runDigest()
+    .then(result => console.log('[Digest] Complete:', result))
+    .catch(err => console.error('[Digest] Failed:', err.message));
 });
 
 // ── Incremental sync (Accepts both GET and POST for cron compatibility) ───────
@@ -459,4 +459,48 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`- Sync:         POST http://localhost:${PORT}/sync`);
   console.log(`- Digest:       POST http://localhost:${PORT}/digest`);
   console.log(`==================================================\n`);
+
+  // ── Internal Automation & Keep-Alive ─────────────────────────────────────────
+  const KEEP_ALIVE_URL = process.env.RENDER_EXTERNAL_URL || (process.env.NODE_ENV === 'production' ? 'https://rag-on-blog-posts.onrender.com' : null);
+
+  // 1. Keep-alive self-ping every 10 minutes to prevent Render free instance from sleeping
+  if (KEEP_ALIVE_URL) {
+    console.log(`[KeepAlive] Configured keep-alive target: ${KEEP_ALIVE_URL}/health`);
+    setInterval(() => {
+      fetch(`${KEEP_ALIVE_URL}/health`)
+        .then(r => r.json())
+        .then(data => console.log(`[KeepAlive] Ping OK (Uptime: ${data.uptime}s)`))
+        .catch(err => console.warn(`[KeepAlive] Ping failed:`, err.message));
+    }, 10 * 60 * 1000); // Every 10 minutes
+  }
+
+  // 2. Internal scheduler (Self-running background cron)
+  let lastDailySyncDate = '';
+  let lastWeeklyDigestWeek = '';
+
+  setInterval(async () => {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const currentHour = now.getUTCHours();
+    const currentDay = now.getUTCDay(); // 0 is Sunday, 1 is Monday
+
+    // Daily auto-sync at 18:30 UTC (00:00 IST Midnight)
+    if (currentHour === 18 && lastDailySyncDate !== todayStr) {
+      lastDailySyncDate = todayStr;
+      console.log('[InternalCron] Running scheduled daily blog sync...');
+      syncNewPosts()
+        .then(res => console.log('[InternalCron] Daily blog sync completed:', res))
+        .catch(e => console.warn('[InternalCron] Daily sync failed:', e.message));
+    }
+
+    // Weekly auto-digest every Monday at 03:30 UTC (09:00 IST)
+    const weekId = `${now.getUTCFullYear()}-W${Math.ceil((now.getUTCDate() + 6) / 7)}`;
+    if (currentDay === 1 && currentHour === 3 && lastWeeklyDigestWeek !== weekId) {
+      lastWeeklyDigestWeek = weekId;
+      console.log('[InternalCron] Running scheduled weekly digest...');
+      runDigest()
+        .then(res => console.log('[InternalCron] Weekly digest completed:', res))
+        .catch(e => console.warn('[InternalCron] Weekly digest failed:', e.message));
+    }
+  }, 15 * 60 * 1000); // Check every 15 minutes
 });

@@ -593,7 +593,9 @@
         throw new Error(res.ok ? 'Unexpected response format' : `Server error (HTTP ${res.status})`);
       }
 
-      if (data.success) {
+      if (data.status === 'digest_started') {
+        showToast('✅ Digest generation started in background! Report will be emailed.', 6000);
+      } else if (data.success) {
         showToast(`✅ Digest sent! Analysed ${data.queriesAnalysed} queries.`, 6000);
       } else if (data.skipped) {
         showToast(`ℹ ${data.reason || 'No queries in the last 7 days — digest skipped.'}`, 5000);
